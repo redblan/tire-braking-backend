@@ -42,7 +42,7 @@ func (h *Handler) GetTiles(ctx *gin.Context) {
 	gripStr := ctx.Query("grip")
 	minGrip, _ := strconv.ParseFloat(gripStr, 64) // если пусто — 0, вернёт всё
 
-	services, err := h.Repository.GetServicesByMinGrip(minGrip)
+	services, err := h.Repository.GetServicesByMinTireGrip(minGrip)
 	if err != nil {
 		logrus.Error(err)
 	}

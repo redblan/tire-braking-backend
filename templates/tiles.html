@@ -1,18 +1,32 @@
-<form action="/tiles" method="GET">
-    <input type="number" step="0.01" name="grip" placeholder="Мин. коэффициент сцепления" value="{{ .grip }}">
-    <button type="submit">Фильтр</button>
-</form>
-<div class="tiles-grid">
-    {{ range .services }}
-    <a href="/feed/{{ .ID }}" class="tile-card">
-        <img src="{{ .ImageURL }}" class="image">
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Тормозной путь — Плитка</title>
+<link rel="stylesheet" href="/static/styles/main.css">
+</head>
+<body>
+<div class="app">
+  <div class="tiles-page">
+    <form class="filter-form" action="/tiles" method="GET">
+      <input type="number" step="0.01" name="grip" placeholder="Мин. коэффициент сцепления" value="{{ .grip }}">
+      <button type="submit">Применить фильтр</button>
+    </form>
+    <div class="tiles-grid">
+      {{ range .services }}
+      <a href="/feed/{{ .ID }}" class="tile-card">
+        <img src="{{ .ImageURL }}" alt="{{ .Name }}">
         <p>{{ .Name }}</p>
-        <p>❤ {{ .Likes }}</p>
-    </a>
-    {{ end }}
-</div>
-<nav class="tabbar">
+        <span class="tile-likes">♥ {{ .Likes }}</span>
+      </a>
+      {{ end }}
+    </div>
+  </div>
+  <nav class="tabbar">
     <a href="/feed/1">Лента</a>
     <a href="/add">Добавление</a>
-    <a href="/tiles">Плитка</a>
-</nav>
+    <a href="/tiles" class="active">Плитка</a>
+  </nav>
+</div>
+</body>
+</html>

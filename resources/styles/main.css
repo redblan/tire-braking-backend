@@ -1,0 +1,72 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #1F1F1F;
+  display: flex;
+  justify-content: center;
+  font-family: 'Segoe UI', sans-serif;
+}
+.app {
+  width: 390px;
+  min-height: 100vh;
+  background: #F8F7F5;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Лента --- */
+.feed-media { position: relative; flex: 1; background: #000; }
+.feed-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.feed-overlay {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,0.6);
+  padding: 16px; color: #fff;
+}
+.feed-title { font-weight: bold; font-size: 16px; margin-bottom: 4px; }
+.feed-desc { font-size: 13px; color: rgba(255,255,255,0.8); margin-bottom: 8px; }
+.feed-tags { display: flex; gap: 8px; margin-bottom: 10px; }
+.tag { background: rgba(255,255,255,0.15); padding: 4px 10px; border-radius: 12px; font-size: 12px; }
+.feed-actions { display: flex; justify-content: space-between; align-items: center; }
+.feed-actions .next { color: #FF6B00; text-decoration: none; font-weight: bold; }
+
+/* --- Добавление --- */
+.add-page { padding: 16px; flex: 1; }
+.upload-box {
+  height: 140px; border: 2px dashed #ccc; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: #999; margin-bottom: 16px;
+}
+.field {
+  border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px;
+  margin-bottom: 12px; color: #1F1F1F; background: #fff;
+}
+.submit-btn {
+  border: 2px solid #1F1F1F; border-radius: 8px; padding: 12px;
+  text-align: center; font-weight: bold; color: #1F1F1F;
+  background: transparent; text-decoration: none; display: block;
+}
+
+/* --- Плитка --- */
+.tiles-page { padding: 16px; flex: 1; }
+.filter-form { margin-bottom: 16px; }
+.filter-form input {
+  width: 100%; padding: 10px 12px; border: 1px solid #ddd;
+  border-radius: 8px; margin-bottom: 8px;
+}
+.filter-form button {
+  width: 100%; padding: 10px; background: #FF6B00; color: #fff;
+  border: none; border-radius: 8px; font-weight: bold;
+}
+.tiles-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tile-card { text-decoration: none; color: #1F1F1F; }
+.tile-card img { width: 100%; height: 120px; object-fit: cover; border-radius: 12px; }
+.tile-card p { font-weight: bold; font-size: 13px; margin: 6px 0 2px; }
+.tile-likes { font-size: 12px; color: #999; }
+
+/* --- Панель вкладок (общая для всех страниц) --- */
+.tabbar { display: flex; border-top: 1px solid #ddd; background: #fff; }
+.tabbar a {
+  flex: 1; text-align: center; padding: 12px 0;
+  text-decoration: none; color: #999; font-size: 12px;
+}
+.tabbar a.active { color: #FF6B00; font-weight: bold; }

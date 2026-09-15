@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Тормозной путь — Добавление</title>
+<link rel="stylesheet" href="/static/styles/main.css">
+</head>
+<body>
+<div class="app">
+  <div class="add-page">
+    <div class="upload-box">Фото / видео</div>
+    <div class="field">{{ .service.TireType }}</div>
+    <div class="field">{{ .service.RoadCondition }}</div>
+    <div class="field">Коэффициент: {{ .service.GripCoefficient }}</div>
+    <a href="#" class="submit-btn">Далее</a>
+  </div>
+  <nav class="tabbar">
+    <a href="/feed/1">Лента</a>
+    <a href="/add" class="active">Добавление</a>
+    <a href="/tiles">Плитка</a>
+  </nav>
+</div>
+</body>
+</html>

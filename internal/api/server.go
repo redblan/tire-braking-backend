@@ -25,7 +25,10 @@ func StartServer() {
 
 	r.GET("/feed/:id", h.GetFeed)
 	r.GET("/add", h.GetAdd)
+	r.POST("/add/create", h.PostCreate)
+	r.POST("/add/publish", h.PostPublish)
 	r.GET("/tiles", h.GetTiles)
+	r.POST("/tiles/delete/:id", h.PostDelete)
 
 	r.Run()
 	log.Println("Server down")

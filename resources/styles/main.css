@@ -70,3 +70,9 @@ body {
   text-decoration: none; color: #999; font-size: 12px;
 }
 .tabbar a.active { color: #FF6B00; font-weight: bold; }
+.tile-card-link { display: block; text-decoration: none; color: #1F1F1F; }
+.delete-btn {
+  width: 100%; margin-top: 6px; padding: 6px; font-size: 12px;
+  background: none; border: 1px solid #ddd; border-radius: 6px;
+  color: #999; cursor: pointer;
+}

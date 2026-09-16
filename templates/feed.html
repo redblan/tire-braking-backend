@@ -1,3 +1,4 @@
+{{define "feed.html"}}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -8,17 +9,17 @@
 <body>
 <div class="app">
   <div class="feed-media">
-    <video src="{{ .service.VideoURL }}" autoplay muted loop playsinline></video>
+    <video src="{{.service.VideoURL}}" autoplay muted loop playsinline></video>
     <div class="feed-overlay">
-      <p class="feed-title">{{ .service.Name }}</p>
-      <p class="feed-desc">{{ .service.Description }}</p>
+      <p class="feed-title">{{.service.Name}}</p>
+      <p class="feed-desc">{{.service.Description}}</p>
       <div class="feed-tags">
-        <span class="tag">шина {{ .service.TireGrip }}</span>
-        <span class="tag">покрытие {{ .service.SurfaceGrip }}</span>
+        <span class="tag">шина {{printf "%.2f" .service.MuTire}}</span>
+        <span class="tag">покрытие {{printf "%.2f" .service.MuSurface}}</span>
       </div>
       <div class="feed-actions">
-        <span>♥ {{ .service.Likes }}</span>
-        <a href="/feed/{{ .service.ID }}?next=true" class="next">следующая →</a>
+        <span>♥ {{.service.Likes}}</span>
+        <a href="/feed/{{.service.ID}}?next=true" class="next">следующая →</a>
       </div>
     </div>
   </div>
@@ -30,3 +31,4 @@
 </div>
 </body>
 </html>
+{{end}}

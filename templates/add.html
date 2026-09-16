@@ -1,3 +1,4 @@
+{{define "add.html"}}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -9,9 +10,20 @@
 <div class="app">
   <div class="add-page">
     <div class="upload-box">Фото / видео</div>
-    <div class="field">Коэфф. сцепления шины: {{ .service.TireGrip }}</div>
-    <div class="field">Коэфф. сцепления покрытия: {{ .service.SurfaceGrip }}</div>
-    <a href="#" class="submit-btn">Далее</a>
+    {{if .hasDraft}}
+    <form action="/add/publish" method="POST">
+      <input type="hidden" name="id" value="{{.service.ID}}">
+      <input class="field" type="text" name="mu_tire" value="{{printf "%.2f" .service.MuTire}}" placeholder="Коэфф. сцепления шины">
+      <input class="field" type="text" name="mu_surface" value="{{printf "%.2f" .service.MuSurface}}" placeholder="Коэфф. сцепления покрытия">
+      <textarea class="field" name="description" placeholder="Описание">{{.service.Description}}</textarea>
+      <button type="submit" class="submit-btn">Опубликовать</button>
+    </form>
+    {{else}}
+    <form action="/add/create" method="POST">
+      <input class="field" type="text" name="name" placeholder="Название сценария" required>
+      <button type="submit" class="submit-btn">Далее</button>
+    </form>
+    {{end}}
   </div>
   <nav class="tabbar">
     <a href="/feed/1">Лента</a>
@@ -21,3 +33,4 @@
 </div>
 </body>
 </html>
+{{end}}

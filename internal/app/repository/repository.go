@@ -1,77 +1,102 @@
 package repository
 
-import "fmt"
+import (
+	"time"
 
-type Repository struct{}
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+type TireCondition struct {
+	ID          uint       `gorm:"primaryKey"`
+	Name        string     `gorm:"column:name"`
+	Description string     `gorm:"column:description"`
+	Status      string     `gorm:"column:status"`
+	ImageURL    string     `gorm:"column:image_url"`
+	VideoURL    string     `gorm:"column:video_url"`
+	MuTire      float64    `gorm:"column:mu_tire"`
+	MuSurface   float64    `gorm:"column:mu_surface"`
+	CreatedAt   time.Time  `gorm:"column:created_at"`
+	CreatorID   uint       `gorm:"column:creator_id"`
+	PublishedAt *time.Time `gorm:"column:published_at"`
+	Likes       int64      `gorm:"-"`
+}
+
+func (TireCondition) TableName() string { return "tire_conditions" }
+
+type Repository struct {
+	db *gorm.DB
+}
 
 func NewRepository() (*Repository, error) {
-	return &Repository{}, nil
-}
-
-type Service struct {
-	ID          int
-	Name        string
-	Description string
-	Status      string
-	ImageURL    string
-	VideoURL    string
-	TireGrip    float64 // коэффициент сцепления шины
-	SurfaceGrip float64 // коэффициент сцепления покрытия
-	Distance    float64 // тормозной путь при 60 км/ч, м
-	Likes       int
-}
-
-func (r *Repository) GetServices() ([]Service, error) {
-	services := []Service{
-		{ID: 1, Name: "Летняя шина, сухой асфальт", Status: "published",
-			Description: "Оптимальные условия торможения. Летняя шина на сухом асфальте.",
-			VideoURL:    "http://localhost:9000/brakes/braking_technique_demo.mp4",
-			ImageURL:    "http://localhost:9000/brakes/tire_summer.jpg",
-			TireGrip:    0.90, SurfaceGrip: 0.85, Distance: 18.5, Likes: 12},
-		{ID: 2, Name: "Зимняя шина, гололёд", Status: "published",
-			Description: "Экстренное торможение на зимней резине по гололёду.",
-			VideoURL:    "http://localhost:9000/brakes/emergency_braking_demo.mp4",
-			ImageURL:    "http://localhost:9000/brakes/tire_winter.jpg",
-			TireGrip:    0.80, SurfaceGrip: 0.20, Distance: 88.5, Likes: 7},
-		{ID: 3, Name: "Черновик расчёта", Status: "draft",
-			Description: "Черновик, ещё не опубликован.",
-			VideoURL:    "http://localhost:9000/brakes/braking_technique_demo.mp4",
-			ImageURL:    "http://localhost:9000/brakes/tire_summer.jpg",
-			TireGrip:    0.80, SurfaceGrip: 0.50, Distance: 35.4},
+	dsn := "host=localhost user=postgres password=postgres dbname=brakepath port=5432 sslmode=disable"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, err
 	}
-	return services, nil
+	return &Repository{db: db}, nil
 }
 
-func (r *Repository) GetService(id int, next bool) (Service, error) {
-	services, _ := r.GetServices()
-	for i, s := range services {
-		if s.ID == id {
-			if next && i+1 < len(services) {
-				return services[i+1], nil
-			}
-			return s, nil
-		}
-	}
-	return Service{}, fmt.Errorf("услуга не найдена")
+// GetPublished — ORM, для ленты и как база для плитки
+func (r *Repository) GetPublished() ([]TireCondition, error) {
+	var res []TireCondition
+	err := r.db.Where("status = ?", "published").Order("id").Find(&res).Error
+	return res, err
 }
 
-func (r *Repository) GetDraft() (Service, error) {
-	services, _ := r.GetServices()
-	for _, s := range services {
-		if s.Status == "draft" {
-			return s, nil
-		}
-	}
-	return Service{}, fmt.Errorf("черновик не найден")
+// SearchByMinTireGrip — ORM, поиск/фильтр для плитки
+func (r *Repository) SearchByMinTireGrip(min float64) ([]TireCondition, error) {
+	var res []TireCondition
+	err := r.db.Where("status = ? AND mu_tire >= ?", "published", min).Order("id").Find(&res).Error
+	return res, err
 }
 
-func (r *Repository) GetServicesByMinTireGrip(minGrip float64) ([]Service, error) {
-	services, _ := r.GetServices()
-	var result []Service
-	for _, s := range services {
-		if s.Status == "published" && s.TireGrip >= minGrip {
-			result = append(result, s)
-		}
+func (r *Repository) GetByID(id int) (TireCondition, error) {
+	var tc TireCondition
+	err := r.db.First(&tc, id).Error
+	return tc, err
+}
+
+// FindDraft — есть ли уже черновик у этого пользователя
+func (r *Repository) FindDraft(creatorID uint) (TireCondition, error) {
+	var tc TireCondition
+	err := r.db.Where("status = ? AND creator_id = ?", "draft", creatorID).First(&tc).Error
+	return tc, err
+}
+
+// CreateDraft — ORM, создаёт пустой черновик (кнопка "Далее" в первый раз)
+func (r *Repository) CreateDraft(creatorID uint, name string) error {
+	tc := TireCondition{
+		Name:      name,
+		Status:    "draft",
+		ImageURL:  "http://localhost:9000/brakes/tire_default.jpg",
+		VideoURL:  "http://localhost:9000/brakes/braking_technique_demo.mp4",
+		CreatorID: creatorID,
+		CreatedAt: time.Now(),
 	}
-	return result, nil
+	return r.db.Create(&tc).Error
+}
+
+// Publish — ORM, смена статуса черновика на опубликован + заполнение полей темы
+func (r *Repository) Publish(id uint, name, description string, muTire, muSurface float64) error {
+	now := time.Now()
+	return r.db.Model(&TireCondition{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"name":         name,
+		"description":  description,
+		"status":       "published",
+		"mu_tire":      muTire,
+		"mu_surface":   muSurface,
+		"published_at": now,
+	}).Error
+}
+
+// Delete — ЧЕРЕЗ СЫРОЙ SQL UPDATE, без ORM (специально по методичке)
+func (r *Repository) Delete(id uint) error {
+	return r.db.Exec("UPDATE tire_conditions SET status = 'deleted' WHERE id = ?", id).Error
+}
+
+func (r *Repository) CountLikes(tireConditionID uint) (int64, error) {
+	var count int64
+	err := r.db.Table("likes").Where("tire_condition_id = ?", tireConditionID).Count(&count).Error
+	return count, err
 }

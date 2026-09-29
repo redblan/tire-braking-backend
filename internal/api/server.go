@@ -1,6 +1,7 @@
 package api
 
 import (
+	"html/template"
 	"log"
 
 	"tire-braking/internal/app/handler"
@@ -20,6 +21,15 @@ func StartServer() {
 	h := handler.NewHandler(repo)
 
 	r := gin.Default()
+	r.SetFuncMap(template.FuncMap{
+		"truncate": func(s string, n int) string {
+			r := []rune(s)
+			if len(r) > n {
+				return string(r[:n]) + "..."
+			}
+			return s
+		},
+	})
 	r.LoadHTMLGlob("templates/*")
 	r.Static("/static", "./resources")
 
@@ -29,6 +39,27 @@ func StartServer() {
 	r.POST("/add/publish", h.PostPublish)
 	r.GET("/tiles", h.GetTiles)
 	r.POST("/tiles/delete/:id", h.PostDelete)
+
+	r.GET("/api/tire-conditions", h.GetTireConditionsAPI)
+	r.GET("/api/tire-conditions/:id", h.GetTireConditionByIDAPI)
+	r.POST("/api/tire-conditions", h.PostTireConditionAPI)
+
+	r.POST("/api/requests/items", h.PostRequestItemAPI)
+	r.PUT("/api/requests/items/:tire_condition_id", h.PutRequestItemAPI)
+	r.DELETE("/api/requests/items/:tire_condition_id", h.DeleteRequestItemAPI)
+
+	r.GET("/api/requests/cart", h.GetCartAPI)
+	r.GET("/api/requests", h.GetRequestsListAPI)
+	r.GET("/api/requests/:id", h.GetRequestByIDAPI)
+	r.PUT("/api/requests/:id", h.PutRequestSpeedAPI)
+	r.PUT("/api/requests/:id/form", h.PutRequestFormAPI)
+	r.PUT("/api/requests/:id/complete", h.PutRequestCompleteAPI)
+	r.PUT("/api/requests/:id/reject", h.PutRequestRejectAPI)
+	r.DELETE("/api/requests/:id", h.DeleteRequestAPI)
+
+	r.POST("/api/register", h.PostRegisterAPI)
+	r.POST("/api/auth", h.PostAuthAPI)
+	r.POST("/api/logout", h.PostLogoutAPI)
 
 	r.Run()
 	log.Println("Server down")

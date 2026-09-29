@@ -11,8 +11,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-const currentUserID = 1 // singleton-заглушка, авторизация появится в ЛР4
-
 type Handler struct {
 	Repository *repository.Repository
 }
@@ -55,14 +53,14 @@ func (h *Handler) GetFeed(ctx *gin.Context) {
 }
 
 func (h *Handler) GetAdd(ctx *gin.Context) {
-	draft, err := h.Repository.FindDraft(currentUserID)
+	draft, err := h.Repository.FindDraft(repository.CurrentUser())
 	hasDraft := err == nil
 	ctx.HTML(http.StatusOK, "add.html", gin.H{"service": draft, "hasDraft": hasDraft})
 }
 
 func (h *Handler) PostCreate(ctx *gin.Context) {
 	name := ctx.PostForm("name")
-	if err := h.Repository.CreateDraft(currentUserID, name); err != nil {
+	if err := h.Repository.CreateDraft(repository.CurrentUser(), name); err != nil {
 		logrus.Error(err)
 	}
 	ctx.Redirect(http.StatusFound, "/add")

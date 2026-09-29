@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Тормозной путь — Лента</title>
-<link rel="stylesheet" href="/static/styles/main.css">
+<link rel="stylesheet" href="/static/styles/main.css?v=3">
 </head>
 <body>
 <div class="app">
@@ -12,14 +12,14 @@
     <video src="{{.service.VideoURL}}" autoplay muted loop playsinline></video>
     <div class="feed-overlay">
       <p class="feed-title">{{.service.Name}}</p>
-      <p class="feed-desc">{{.service.Description}}</p>
+      <p class="feed-desc">{{truncate .service.Description 60}}</p>
       <div class="feed-tags">
         <span class="tag">шина {{printf "%.2f" .service.MuTire}}</span>
         <span class="tag">покрытие {{printf "%.2f" .service.MuSurface}}</span>
       </div>
       <div class="feed-actions">
-        <span>♥ {{.service.Likes}}</span>
-        <a href="/feed/{{.service.ID}}?next=true" class="next">следующая →</a>
+        <span class="like-count">♥ {{.service.Likes}}</span>
+        <a href="/feed/{{.service.ID}}?next=true" class="next-icon" aria-label="Следующая">→</a>
       </div>
     </div>
   </div>

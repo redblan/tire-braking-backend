@@ -4,15 +4,23 @@
 <head>
 <meta charset="UTF-8">
 <title>Тормозной путь — Добавление</title>
-<link rel="stylesheet" href="/static/styles/main.css">
+<link rel="stylesheet" href="/static/styles/main.css?v=3">
 </head>
 <body>
 <div class="app">
   <div class="add-page">
-    <div class="upload-box">Фото / видео</div>
     {{if .hasDraft}}
     <form action="/add/publish" method="POST">
       <input type="hidden" name="id" value="{{.service.ID}}">
+      <input type="hidden" name="name" value="{{.service.Name}}">
+      <label class="upload-field">
+        <span class="upload-label">Фото</span>
+        <input type="file" name="photo" accept="image/*">
+      </label>
+      <label class="upload-field">
+        <span class="upload-label">Видео</span>
+        <input type="file" name="video" accept="video/*">
+      </label>
       <input class="field" type="text" name="mu_tire" value="{{printf "%.2f" .service.MuTire}}" placeholder="Коэфф. сцепления шины">
       <input class="field" type="text" name="mu_surface" value="{{printf "%.2f" .service.MuSurface}}" placeholder="Коэфф. сцепления покрытия">
       <textarea class="field" name="description" placeholder="Описание">{{.service.Description}}</textarea>
@@ -20,6 +28,14 @@
     </form>
     {{else}}
     <form action="/add/create" method="POST">
+      <label class="upload-field">
+        <span class="upload-label">Фото</span>
+        <input type="file" name="photo" accept="image/*">
+      </label>
+      <label class="upload-field">
+        <span class="upload-label">Видео</span>
+        <input type="file" name="video" accept="video/*">
+      </label>
       <input class="field" type="text" name="name" placeholder="Название сценария" required>
       <button type="submit" class="submit-btn">Далее</button>
     </form>

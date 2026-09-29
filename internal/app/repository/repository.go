@@ -69,12 +69,29 @@ func (r *Repository) CreateDraft(creatorID uint, name string) error {
 	tc := TireCondition{
 		Name:      name,
 		Status:    "draft",
-		ImageURL:  "http://localhost:9000/brakes/tire_default.jpg",
-		VideoURL:  "http://localhost:9000/brakes/braking_technique_demo.mp4",
+		ImageURL:  "/static/images/default_tire.jpg",
+		VideoURL:  "/static/videos/default_tire.mp4",
 		CreatorID: creatorID,
 		CreatedAt: time.Now(),
 	}
 	return r.db.Create(&tc).Error
+}
+
+// CreateTireCondition — ORM, создаёт услугу через API (POST /api/tire-conditions), статус "draft" по умолчанию
+func (r *Repository) CreateTireCondition(name, description, imageURL, videoURL string, muTire, muSurface float64, creatorID uint) (TireCondition, error) {
+	tc := TireCondition{
+		Name:        name,
+		Description: description,
+		Status:      "draft",
+		ImageURL:    imageURL,
+		VideoURL:    videoURL,
+		MuTire:      muTire,
+		MuSurface:   muSurface,
+		CreatorID:   creatorID,
+		CreatedAt:   time.Now(),
+	}
+	err := r.db.Create(&tc).Error
+	return tc, err
 }
 
 // Publish — ORM, смена статуса черновика на опубликован + заполнение полей темы

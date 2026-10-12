@@ -41,8 +41,13 @@ func StartServer() {
 	r.POST("/tiles/delete/:id", h.PostDelete)
 
 	r.GET("/api/tire-conditions", h.GetTireConditionsAPI)
+	r.GET("/api/tire-conditions/feed", h.GetTireConditionsFeedAPI)
+	r.GET("/api/tire-conditions/draft", h.GetMyDraftTireConditionAPI)
 	r.GET("/api/tire-conditions/:id", h.GetTireConditionByIDAPI)
 	r.POST("/api/tire-conditions", h.PostTireConditionAPI)
+	r.PUT("/api/tire-conditions/:id/publish", h.PutPublishTireConditionAPI)
+	r.DELETE("/api/tire-conditions/:id", h.DeleteTireConditionAPI)
+	r.POST("/api/tire-conditions/:id/like", h.PostLikeTireConditionAPI)
 
 	r.POST("/api/requests/items", h.PostRequestItemAPI)
 	r.PUT("/api/requests/items/:tire_condition_id", h.PutRequestItemAPI)

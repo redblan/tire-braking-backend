@@ -24,3 +24,11 @@ type RequestItem struct {
 }
 
 func (RequestItem) TableName() string { return "request_items" }
+
+type Like struct {
+	ID              uint `gorm:"primaryKey"`
+	UserID          uint `gorm:"column:user_id"`
+	TireConditionID uint `gorm:"column:tire_condition_id"`
+}
+
+func (Like) TableName() string { return "likes" }

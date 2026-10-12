@@ -33,6 +33,42 @@ func (h *Handler) GetTireConditionsAPI(ctx *gin.Context) {
 	for i, s := range services {
 		response[i] = s.ToResponse()
 	}
+	for i := range response {
+		response[i].IsOwner = services[i].CreatorID == repository.CurrentUser()
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+// GetTireConditionsFeedAPI — GET /api/tire-conditions/feed, все опубликованные услуги без фильтра
+func (h *Handler) GetTireConditionsFeedAPI(ctx *gin.Context) {
+	services, err := h.Repository.GetPublished()
+	if err != nil {
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	response := make([]repository.TireConditionResponse, len(services))
+	for i, s := range services {
+		response[i] = s.ToResponse()
+		response[i].IsOwner = s.CreatorID == repository.CurrentUser()
+	}
+	ctx.JSON(http.StatusOK, response)
+}
+
+// GetMyDraftTireConditionAPI — GET /api/tire-conditions/draft, черновик услуги текущего пользователя
+func (h *Handler) GetMyDraftTireConditionAPI(ctx *gin.Context) {
+	tc, err := h.Repository.FindMyDraftTireCondition(repository.CurrentUser())
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.Status(http.StatusNotFound)
+			return
+		}
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	response := tc.ToResponse()
+	response.IsOwner = true
 	ctx.JSON(http.StatusOK, response)
 }
 
@@ -97,6 +133,95 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusCreated, tc.ToResponse())
+}
+
+// PutPublishTireConditionAPI — PUT /api/tire-conditions/:id/publish, body {"description": "...", "mu_tire": число, "mu_surface": число}
+func (h *Handler) PutPublishTireConditionAPI(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	var body struct {
+		Description string  `json:"description"`
+		MuTire      float64 `json:"mu_tire"`
+		MuSurface   float64 `json:"mu_surface"`
+	}
+	// коэффициенты сцепления стоят в знаменателе формулы тормозного пути, поэтому должны быть > 0
+	if err := ctx.ShouldBindJSON(&body); err != nil || body.MuTire <= 0 || body.MuSurface <= 0 {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Repository.PublishTireCondition(uint(id), body.Description, body.MuTire, body.MuSurface); err != nil {
+		ctx.Status(statusTransitionErrorCode(err))
+		return
+	}
+
+	tc, err := h.Repository.GetByID(id)
+	if err != nil {
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	response := tc.ToResponse()
+	response.IsOwner = tc.CreatorID == repository.CurrentUser()
+	ctx.JSON(http.StatusOK, response)
+}
+
+// DeleteTireConditionAPI — DELETE /api/tire-conditions/:id, логическое удаление, только своей услуги
+func (h *Handler) DeleteTireConditionAPI(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	err = h.Repository.DeleteTireCondition(uint(id), repository.CurrentUser())
+	if err != nil {
+		switch {
+		case errors.Is(err, repository.ErrNotOwner):
+			ctx.Status(http.StatusForbidden)
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			ctx.Status(http.StatusNotFound)
+		default:
+			ctx.Status(http.StatusInternalServerError)
+		}
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
+}
+
+// PostLikeTireConditionAPI — POST /api/tire-conditions/:id/like, body {"value": 0 или 1}
+func (h *Handler) PostLikeTireConditionAPI(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	// указатель — чтобы отличить отсутствующее поле от value=0
+	var body struct {
+		Value *int `json:"value"`
+	}
+	if err := ctx.ShouldBindJSON(&body); err != nil || body.Value == nil || (*body.Value != 0 && *body.Value != 1) {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	err = h.Repository.ToggleLike(uint(id), repository.CurrentUser(), *body.Value)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.Status(http.StatusNotFound)
+			return
+		}
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	ctx.Status(http.StatusNoContent)
 }
 
 // PostRequestItemAPI — POST /api/requests/items, body {"tire_condition_id": число}

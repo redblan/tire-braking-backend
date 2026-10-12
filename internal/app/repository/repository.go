@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"errors"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -23,6 +24,8 @@ type TireCondition struct {
 }
 
 func (TireCondition) TableName() string { return "tire_conditions" }
+
+var ErrNotOwner = errors.New("tire condition belongs to another user")
 
 type Repository struct {
 	db *gorm.DB
@@ -61,6 +64,13 @@ func (r *Repository) GetByID(id int) (TireCondition, error) {
 func (r *Repository) FindDraft(creatorID uint) (TireCondition, error) {
 	var tc TireCondition
 	err := r.db.Where("status = ? AND creator_id = ?", "draft", creatorID).First(&tc).Error
+	return tc, err
+}
+
+// FindMyDraftTireCondition — ORM, черновик услуги пользователя для GET /api/tire-conditions/draft
+func (r *Repository) FindMyDraftTireCondition(userID uint) (TireCondition, error) {
+	var tc TireCondition
+	err := r.db.Where("status = ? AND creator_id = ?", "draft", userID).First(&tc).Error
 	return tc, err
 }
 
@@ -107,9 +117,71 @@ func (r *Repository) Publish(id uint, name, description string, muTire, muSurfac
 	}).Error
 }
 
+// PublishTireCondition — ORM, в транзакции: draft -> published + заполнение полей; не черновик -> ErrInvalidStatusTransition
+func (r *Repository) PublishTireCondition(id uint, description string, muTire, muSurface float64) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var tc TireCondition
+		if err := tx.First(&tc, id).Error; err != nil {
+			return err
+		}
+		if tc.Status != "draft" {
+			return ErrInvalidStatusTransition
+		}
+
+		return tx.Model(&TireCondition{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"status":       "published",
+			"description":  description,
+			"mu_tire":      muTire,
+			"mu_surface":   muSurface,
+			"published_at": time.Now(),
+		}).Error
+	})
+}
+
 // Delete — ЧЕРЕЗ СЫРОЙ SQL UPDATE, без ORM (специально по методичке)
 func (r *Repository) Delete(id uint) error {
 	return r.db.Exec("UPDATE tire_conditions SET status = 'deleted' WHERE id = ?", id).Error
+}
+
+// DeleteTireCondition — владелец проверяется через ORM, само удаление — сырой SQL UPDATE (логическое удаление)
+func (r *Repository) DeleteTireCondition(id, userID uint) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var tc TireCondition
+		if err := tx.First(&tc, id).Error; err != nil {
+			return err
+		}
+		if tc.CreatorID != userID {
+			return ErrNotOwner
+		}
+
+		return tx.Exec("UPDATE tire_conditions SET status = 'deleted' WHERE id = ?", id).Error
+	})
+}
+
+// ToggleLike — ORM: value=1 ставит лайк (без дублей по паре user_id+tire_condition_id), value=0 снимает;
+// услуга не найдена -> gorm.ErrRecordNotFound
+func (r *Repository) ToggleLike(tireConditionID, userID uint, value int) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var tc TireCondition
+		if err := tx.First(&tc, tireConditionID).Error; err != nil {
+			return err
+		}
+
+		if value == 0 {
+			return tx.Where("user_id = ? AND tire_condition_id = ?", userID, tireConditionID).Delete(&Like{}).Error
+		}
+
+		var existing Like
+		err := tx.Where("user_id = ? AND tire_condition_id = ?", userID, tireConditionID).First(&existing).Error
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		return tx.Create(&Like{UserID: userID, TireConditionID: tireConditionID}).Error
+	})
 }
 
 func (r *Repository) CountLikes(tireConditionID uint) (int64, error) {

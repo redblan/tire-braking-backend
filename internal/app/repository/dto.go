@@ -4,6 +4,7 @@ import "time"
 
 // TireConditionResponse — DTO для JSON-ответов по Услуге.
 // Статус (внутреннее поле БД) наружу не отдаётся.
+// IsOwner заполняется в хендлере — там известен текущий пользователь.
 type TireConditionResponse struct {
 	ID          uint    `json:"id"`
 	Name        string  `json:"name"`
@@ -12,6 +13,7 @@ type TireConditionResponse struct {
 	VideoURL    string  `json:"video_url"`
 	MuTire      float64 `json:"mu_tire"`
 	MuSurface   float64 `json:"mu_surface"`
+	IsOwner     bool    `json:"is_owner"`
 }
 
 func (tc TireCondition) ToResponse() TireConditionResponse {

@@ -12,6 +12,7 @@ type User struct {
 	ID           uint   `gorm:"primaryKey"`
 	Username     string `gorm:"column:username"`
 	PasswordHash string `gorm:"column:password_hash"`
+	IsModerator  bool   `gorm:"column:is_moderator"`
 }
 
 func (User) TableName() string { return "users" }
@@ -29,5 +30,12 @@ func (r *Repository) CreateUser(username, passwordHash string) (User, error) {
 
 	user := User{Username: username, PasswordHash: passwordHash}
 	err = r.db.Create(&user).Error
+	return user, err
+}
+
+// GetUserByUsername — ORM; не найден -> gorm.ErrRecordNotFound
+func (r *Repository) GetUserByUsername(username string) (User, error) {
+	var user User
+	err := r.db.Where("username = ?", username).First(&user).Error
 	return user, err
 }

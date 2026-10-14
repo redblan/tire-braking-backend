@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"tire-braking/internal/app/auth"
 	"tire-braking/internal/app/repository"
 
 	"github.com/gin-gonic/gin"
@@ -13,10 +14,12 @@ import (
 
 type Handler struct {
 	Repository *repository.Repository
+	JWT        *auth.JWTManager
+	Blacklist  *auth.Blacklist
 }
 
-func NewHandler(r *repository.Repository) *Handler {
-	return &Handler{Repository: r}
+func NewHandler(r *repository.Repository, jwt *auth.JWTManager, blacklist *auth.Blacklist) *Handler {
+	return &Handler{Repository: r, JWT: jwt, Blacklist: blacklist}
 }
 
 func parseDecimal(s string) float64 {
@@ -53,14 +56,16 @@ func (h *Handler) GetFeed(ctx *gin.Context) {
 }
 
 func (h *Handler) GetAdd(ctx *gin.Context) {
-	draft, err := h.Repository.FindDraft(repository.CurrentUser())
+	userID, _ := currentUserID(ctx)
+	draft, err := h.Repository.FindDraft(userID)
 	hasDraft := err == nil
 	ctx.HTML(http.StatusOK, "add.html", gin.H{"service": draft, "hasDraft": hasDraft})
 }
 
 func (h *Handler) PostCreate(ctx *gin.Context) {
 	name := ctx.PostForm("name")
-	if err := h.Repository.CreateDraft(repository.CurrentUser(), name); err != nil {
+	userID, _ := currentUserID(ctx)
+	if err := h.Repository.CreateDraft(userID, name); err != nil {
 		logrus.Error(err)
 	}
 	ctx.Redirect(http.StatusFound, "/add")

@@ -1,0 +1,808 @@
+basePath: /
+definitions:
+  handler.AddRequestItemRequest:
+    properties:
+      tire_condition_id:
+        type: integer
+    type: object
+  handler.AuthResponse:
+    properties:
+      access_token:
+        type: string
+    type: object
+  handler.CredentialsRequest:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    type: object
+  handler.LikeRequest:
+    properties:
+      value:
+        type: integer
+    type: object
+  handler.PublishTireConditionRequest:
+    properties:
+      description:
+        type: string
+      mu_surface:
+        type: number
+      mu_tire:
+        type: number
+    type: object
+  handler.RequestItemPositionRequest:
+    properties:
+      position:
+        type: integer
+    type: object
+  handler.RequestSpeedRequest:
+    properties:
+      speed_kmh:
+        type: integer
+    type: object
+  repository.CartResponse:
+    properties:
+      items_count:
+        type: integer
+      request_id:
+        type: integer
+    type: object
+  repository.RequestDetailResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      formed_at:
+        type: string
+      id:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/repository.RequestItemDetailResponse'
+        type: array
+      speed_kmh:
+        type: integer
+      status:
+        type: string
+    type: object
+  repository.RequestItemDetailResponse:
+    properties:
+      braking_distance:
+        type: number
+      id:
+        type: integer
+      image_url:
+        type: string
+      name:
+        type: string
+      position:
+        type: integer
+      tire_condition_id:
+        type: integer
+    type: object
+  repository.RequestItemResponse:
+    properties:
+      braking_distance:
+        type: number
+      id:
+        type: integer
+      position:
+        type: integer
+      request_id:
+        type: integer
+      tire_condition_id:
+        type: integer
+    type: object
+  repository.RequestListItemResponse:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      creator_username:
+        type: string
+      formed_at:
+        type: string
+      id:
+        type: integer
+      moderator_username:
+        type: string
+      result_count:
+        type: integer
+      speed_kmh:
+        type: integer
+      status:
+        type: string
+    type: object
+  repository.TireConditionResponse:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      image_url:
+        type: string
+      is_owner:
+        type: boolean
+      mu_surface:
+        type: number
+      mu_tire:
+        type: number
+      name:
+        type: string
+      video_url:
+        type: string
+    type: object
+  repository.UserResponse:
+    properties:
+      id:
+        type: integer
+      username:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: 'Расчёт тормозного пути: услуги (состояния шин и покрытия), заявки,
+    авторизация по JWT.'
+  title: BrakePath API
+  version: "1.0"
+paths:
+  /api/auth:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Логин и пароль
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Неверный логин или пароль
+        "500":
+          description: Внутренняя ошибка
+      summary: Вход, выдача JWT
+      tags:
+      - auth
+  /api/logout:
+    post:
+      responses:
+        "204":
+          description: Готово
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: 'Выход: токен попадает в blacklist до своего истечения'
+      tags:
+      - auth
+  /api/register:
+    post:
+      consumes:
+      - application/json
+      description: is_moderator всегда false; пароль хранится как bcrypt-хеш
+      parameters:
+      - description: Логин и пароль
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CredentialsRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/repository.UserResponse'
+        "400":
+          description: Некорректные параметры
+        "409":
+          description: Логин занят
+        "500":
+          description: Внутренняя ошибка
+      summary: Регистрация
+      tags:
+      - auth
+  /api/requests:
+    get:
+      description: Пользователь видит свои заявки, модератор — все
+      parameters:
+      - description: 'Статус: formed, completed, rejected'
+        in: query
+        name: status
+        type: string
+      - description: Дата формирования от, 2006-01-02
+        in: query
+        name: date_from
+        type: string
+      - description: Дата формирования до, 2006-01-02
+        in: query
+        name: date_to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.RequestListItemResponse'
+            type: array
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Список заявок (без черновиков и удалённых)
+      tags:
+      - requests
+  /api/requests/{id}:
+    delete:
+      description: Только своя заявка
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: Удалено
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Нет прав / чужой объект
+        "404":
+          description: Не найдено
+        "409":
+          description: Недопустимый переход статуса
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Удалить черновик заявки (логически)
+      tags:
+      - requests
+    get:
+      description: Своя заявка; модератор — любая
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.RequestDetailResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Нет прав / чужой объект
+        "404":
+          description: Не найдено
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Заявка с составом
+      tags:
+      - requests
+    put:
+      consumes:
+      - application/json
+      description: Только своя заявка
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Скорость, км/ч
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RequestSpeedRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.RequestDetailResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Нет прав / чужой объект
+        "404":
+          description: Не найдено
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Задать скорость в заявке
+      tags:
+      - requests
+  /api/requests/{id}/complete:
+    put:
+      description: Только модератор; moderator_id берётся из токена
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.RequestDetailResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Не модератор
+        "404":
+          description: Не найдено
+        "409":
+          description: Недопустимый переход статуса
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Завершить заявку (formed -> completed)
+      tags:
+      - requests
+  /api/requests/{id}/form:
+    put:
+      description: Только своя заявка
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.RequestDetailResponse'
+        "400":
+          description: Не задана скорость или пустой состав
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Нет прав / чужой объект
+        "404":
+          description: Не найдено
+        "409":
+          description: Недопустимый переход статуса
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Сформировать заявку (draft -> formed), расчёт тормозного пути
+      tags:
+      - requests
+  /api/requests/{id}/reject:
+    put:
+      description: Только модератор; moderator_id берётся из токена
+      parameters:
+      - description: ID заявки
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.RequestDetailResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Не модератор
+        "404":
+          description: Не найдено
+        "409":
+          description: Недопустимый переход статуса
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Отклонить заявку (formed -> rejected)
+      tags:
+      - requests
+  /api/requests/cart:
+    get:
+      description: request_id = null, если черновика нет
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.CartResponse'
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: 'Корзина: id черновика заявки и число услуг в нём'
+      tags:
+      - requests
+  /api/requests/items:
+    post:
+      consumes:
+      - application/json
+      description: Черновик заявки создаётся автоматически, если его нет
+      parameters:
+      - description: ID услуги
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.AddRequestItemRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/repository.RequestItemResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "404":
+          description: Услуга не найдена или не опубликована
+        "409":
+          description: Услуга уже в заявке
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Добавить услугу в корзину (черновик заявки)
+      tags:
+      - request-items
+  /api/requests/items/{tire_condition_id}:
+    delete:
+      parameters:
+      - description: ID услуги
+        in: path
+        name: tire_condition_id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: Удалено
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "404":
+          description: Нет черновика или услуги в нём
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Удалить услугу из черновика заявки
+      tags:
+      - request-items
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID услуги
+        in: path
+        name: tire_condition_id
+        required: true
+        type: integer
+      - description: Новая позиция
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RequestItemPositionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.RequestItemResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "404":
+          description: Нет черновика или услуги в нём
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Изменить позицию услуги в черновике заявки
+      tags:
+      - request-items
+  /api/tire-conditions:
+    get:
+      description: Для гостя is_owner = false
+      parameters:
+      - description: Минимальный коэффициент сцепления шины (mu_tire)
+        in: query
+        name: grip
+        type: number
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.TireConditionResponse'
+            type: array
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "500":
+          description: Внутренняя ошибка
+      summary: Список опубликованных услуг
+      tags:
+      - tire-conditions
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Название
+        in: formData
+        name: name
+        required: true
+        type: string
+      - description: Описание
+        in: formData
+        name: description
+        type: string
+      - description: Коэффициент сцепления шины
+        in: formData
+        name: mu_tire
+        type: number
+      - description: Коэффициент сцепления покрытия
+        in: formData
+        name: mu_surface
+        type: number
+      - description: Изображение
+        in: formData
+        name: image
+        required: true
+        type: file
+      - description: Видео
+        in: formData
+        name: video
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/repository.TireConditionResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Создать услугу (черновик) с загрузкой изображения и видео в Minio
+      tags:
+      - tire-conditions
+  /api/tire-conditions/{id}:
+    delete:
+      description: Своя услуга; модератор — любая
+      parameters:
+      - description: ID услуги
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "204":
+          description: Удалено
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Нет прав / чужой объект
+        "404":
+          description: Не найдено
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Удалить услугу (логически)
+      tags:
+      - tire-conditions
+    get:
+      description: Для гостя is_owner = false
+      parameters:
+      - description: ID услуги
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.TireConditionResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "404":
+          description: Не найдено
+      summary: Услуга по id
+      tags:
+      - tire-conditions
+  /api/tire-conditions/{id}/like:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: ID услуги
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 'value: 1 — поставить, 0 — снять'
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LikeRequest'
+      responses:
+        "204":
+          description: Готово
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "404":
+          description: Не найдено
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Поставить или снять лайк
+      tags:
+      - tire-conditions
+  /api/tire-conditions/{id}/publish:
+    put:
+      consumes:
+      - application/json
+      description: Своя услуга; модератор — любая
+      parameters:
+      - description: ID услуги
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Описание и коэффициенты (> 0)
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PublishTireConditionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.TireConditionResponse'
+        "400":
+          description: Некорректные параметры
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "403":
+          description: Нет прав / чужой объект
+        "404":
+          description: Не найдено
+        "409":
+          description: Недопустимый переход статуса
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Опубликовать черновик услуги
+      tags:
+      - tire-conditions
+  /api/tire-conditions/draft:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/repository.TireConditionResponse'
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "404":
+          description: Черновика нет
+        "500":
+          description: Внутренняя ошибка
+      security:
+      - BearerAuth: []
+      summary: Черновик услуги текущего пользователя
+      tags:
+      - tire-conditions
+  /api/tire-conditions/feed:
+    get:
+      description: Для гостя is_owner = false
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/repository.TireConditionResponse'
+            type: array
+        "401":
+          description: Нет токена, токен невалиден, просрочен или отозван
+        "500":
+          description: Внутренняя ошибка
+      summary: Лента опубликованных услуг
+      tags:
+      - tire-conditions
+securityDefinitions:
+  BearerAuth:
+    description: Введите "Bearer <access_token>"
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

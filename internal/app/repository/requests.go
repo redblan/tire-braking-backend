@@ -52,8 +52,9 @@ func (r *Repository) GetCartInfo(userID uint) (*uint, int, error) {
 	return &id, int(count), nil
 }
 
-// GetRequestsList — ORM, список заявок (без draft/deleted) с именами создателя/модератора и числом посчитанных позиций
-func (r *Repository) GetRequestsList(statusFilter string, dateFrom, dateTo *time.Time) ([]RequestListRow, error) {
+// GetRequestsList — ORM, список заявок (без draft/deleted) с именами создателя/модератора и числом посчитанных позиций;
+// creatorID != nil — только заявки этого создателя
+func (r *Repository) GetRequestsList(statusFilter string, dateFrom, dateTo *time.Time, creatorID *uint) ([]RequestListRow, error) {
 	var rows []RequestListRow
 
 	query := r.db.Table("requests AS r").
@@ -64,6 +65,9 @@ func (r *Repository) GetRequestsList(statusFilter string, dateFrom, dateTo *time
 		Joins("LEFT JOIN users AS moderator ON moderator.id = r.moderator_id").
 		Where("r.status NOT IN ?", []string{"draft", "deleted"})
 
+	if creatorID != nil {
+		query = query.Where("r.creator_id = ?", *creatorID)
+	}
 	if statusFilter != "" {
 		query = query.Where("r.status = ?", statusFilter)
 	}
@@ -76,6 +80,18 @@ func (r *Repository) GetRequestsList(statusFilter string, dateFrom, dateTo *time
 
 	err := query.Order("r.id").Scan(&rows).Error
 	return rows, err
+}
+
+// CheckRequestOwner — ORM; заявка не найдена -> gorm.ErrRecordNotFound, чужая -> ErrNotOwner
+func (r *Repository) CheckRequestOwner(id, userID uint) error {
+	var req Request
+	if err := r.db.Select("id", "creator_id").First(&req, id).Error; err != nil {
+		return err
+	}
+	if req.CreatorID != userID {
+		return ErrNotOwner
+	}
+	return nil
 }
 
 // GetRequestWithItems — ORM, заявка + её состав (join с tire_conditions); заявка не найдена -> gorm.ErrRecordNotFound
@@ -164,14 +180,14 @@ func transitionFormedTo(tx *gorm.DB, id, moderatorID uint, newStatus string) err
 	}).Error
 }
 
-// CompleteRequest — formed -> completed (только модератор, сейчас — тот же CurrentUser())
+// CompleteRequest — formed -> completed (только модератор, moderatorID из токена)
 func (r *Repository) CompleteRequest(id, moderatorID uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return transitionFormedTo(tx, id, moderatorID, "completed")
 	})
 }
 
-// RejectRequest — formed -> rejected (только модератор, сейчас — тот же CurrentUser())
+// RejectRequest — formed -> rejected (только модератор, moderatorID из токена)
 func (r *Repository) RejectRequest(id, moderatorID uint) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return transitionFormedTo(tx, id, moderatorID, "rejected")

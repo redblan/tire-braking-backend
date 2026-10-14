@@ -25,7 +25,7 @@ type TireCondition struct {
 
 func (TireCondition) TableName() string { return "tire_conditions" }
 
-var ErrNotOwner = errors.New("tire condition belongs to another user")
+var ErrNotOwner = errors.New("object belongs to another user")
 
 type Repository struct {
 	db *gorm.DB
@@ -117,12 +117,16 @@ func (r *Repository) Publish(id uint, name, description string, muTire, muSurfac
 	}).Error
 }
 
-// PublishTireCondition — ORM, в транзакции: draft -> published + заполнение полей; не черновик -> ErrInvalidStatusTransition
-func (r *Repository) PublishTireCondition(id uint, description string, muTire, muSurface float64) error {
+// PublishTireCondition — ORM, в транзакции: draft -> published + заполнение полей; не черновик -> ErrInvalidStatusTransition;
+// чужая услуга -> ErrNotOwner (модератору проверка владельца не нужна)
+func (r *Repository) PublishTireCondition(id uint, description string, muTire, muSurface float64, userID uint, isModerator bool) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var tc TireCondition
 		if err := tx.First(&tc, id).Error; err != nil {
 			return err
+		}
+		if !isModerator && tc.CreatorID != userID {
+			return ErrNotOwner
 		}
 		if tc.Status != "draft" {
 			return ErrInvalidStatusTransition
@@ -143,14 +147,14 @@ func (r *Repository) Delete(id uint) error {
 	return r.db.Exec("UPDATE tire_conditions SET status = 'deleted' WHERE id = ?", id).Error
 }
 
-// DeleteTireCondition — владелец проверяется через ORM, само удаление — сырой SQL UPDATE (логическое удаление)
-func (r *Repository) DeleteTireCondition(id, userID uint) error {
+// DeleteTireCondition — владелец проверяется через ORM (модератору — не нужно), само удаление — сырой SQL UPDATE (логическое удаление)
+func (r *Repository) DeleteTireCondition(id, userID uint, isModerator bool) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var tc TireCondition
 		if err := tx.First(&tc, id).Error; err != nil {
 			return err
 		}
-		if tc.CreatorID != userID {
+		if !isModerator && tc.CreatorID != userID {
 			return ErrNotOwner
 		}
 

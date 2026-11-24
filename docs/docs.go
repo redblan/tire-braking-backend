@@ -124,565 +124,35 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/requests": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Пользователь видит свои заявки, модератор — все",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Список заявок (без черновиков и удалённых)",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Статус: formed, completed, rejected",
-                        "name": "status",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Дата формирования от, 2006-01-02",
-                        "name": "date_from",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Дата формирования до, 2006-01-02",
-                        "name": "date_to",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/repository.RequestListItemResponse"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/cart": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "request_id = null, если черновика нет",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Корзина: id черновика заявки и число услуг в нём",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.CartResponse"
-                        }
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/items": {
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Черновик заявки создаётся автоматически, если его нет",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "request-items"
-                ],
-                "summary": "Добавить услугу в корзину (черновик заявки)",
-                "parameters": [
-                    {
-                        "description": "ID услуги",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.AddRequestItemRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Created",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestItemResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "404": {
-                        "description": "Услуга не найдена или не опубликована"
-                    },
-                    "409": {
-                        "description": "Услуга уже в заявке"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/items/{tire_condition_id}": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "request-items"
-                ],
-                "summary": "Изменить позицию услуги в черновике заявки",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID услуги",
-                        "name": "tire_condition_id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Новая позиция",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.RequestItemPositionRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestItemResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "404": {
-                        "description": "Нет черновика или услуги в нём"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "tags": [
-                    "request-items"
-                ],
-                "summary": "Удалить услугу из черновика заявки",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID услуги",
-                        "name": "tire_condition_id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "Удалено"
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "404": {
-                        "description": "Нет черновика или услуги в нём"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/{id}": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Своя заявка; модератор — любая",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Заявка с составом",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID заявки",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestDetailResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "403": {
-                        "description": "Нет прав / чужой объект"
-                    },
-                    "404": {
-                        "description": "Не найдено"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            },
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Только своя заявка",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Задать скорость в заявке",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID заявки",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Скорость, км/ч",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handler.RequestSpeedRequest"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestDetailResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "403": {
-                        "description": "Нет прав / чужой объект"
-                    },
-                    "404": {
-                        "description": "Не найдено"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            },
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Только своя заявка",
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Удалить черновик заявки (логически)",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID заявки",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "Удалено"
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "403": {
-                        "description": "Нет прав / чужой объект"
-                    },
-                    "404": {
-                        "description": "Не найдено"
-                    },
-                    "409": {
-                        "description": "Недопустимый переход статуса"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/{id}/complete": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Только модератор; moderator_id берётся из токена",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Завершить заявку (formed -\u003e completed)",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID заявки",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestDetailResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "403": {
-                        "description": "Не модератор"
-                    },
-                    "404": {
-                        "description": "Не найдено"
-                    },
-                    "409": {
-                        "description": "Недопустимый переход статуса"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/{id}/form": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Только своя заявка",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Сформировать заявку (draft -\u003e formed), расчёт тормозного пути",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID заявки",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestDetailResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Не задана скорость или пустой состав"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "403": {
-                        "description": "Нет прав / чужой объект"
-                    },
-                    "404": {
-                        "description": "Не найдено"
-                    },
-                    "409": {
-                        "description": "Недопустимый переход статуса"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/requests/{id}/reject": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Только модератор; moderator_id берётся из токена",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "requests"
-                ],
-                "summary": "Отклонить заявку (formed -\u003e rejected)",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "ID заявки",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/repository.RequestDetailResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Некорректные параметры"
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "403": {
-                        "description": "Не модератор"
-                    },
-                    "404": {
-                        "description": "Не найдено"
-                    },
-                    "409": {
-                        "description": "Недопустимый переход статуса"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
         "/api/tire-conditions": {
             "get": {
-                "description": "Для гостя is_owner = false",
+                "description": "Пагинация: page (с 1) и limit (по умолчанию 10, максимум 100). total — число услуг, подходящих под фильтр. is_owner: 0 или 1 — создатель услуги совпадает с текущим пользователем (для гостя 0)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "tire-conditions"
                 ],
-                "summary": "Список опубликованных услуг",
+                "summary": "Список опубликованных услуг (страница)",
                 "parameters": [
                     {
                         "type": "number",
                         "description": "Минимальный коэффициент сцепления шины (mu_tire)",
                         "name": "grip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Номер страницы, с 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Размер страницы, максимум 100",
+                        "name": "limit",
                         "in": "query"
                     }
                 ],
@@ -690,11 +160,11 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/repository.TireConditionResponse"
-                            }
+                            "$ref": "#/definitions/repository.TireConditionsPage"
                         }
+                    },
+                    "400": {
+                        "description": "Некорректные page или limit"
                     },
                     "401": {
                         "description": "Нет токена, токен невалиден, просрочен или отозван"
@@ -719,7 +189,7 @@ const docTemplate = `{
                 "tags": [
                     "tire-conditions"
                 ],
-                "summary": "Создать услугу (черновик) с загрузкой изображения и видео в Minio",
+                "summary": "Создать услугу (черновик) с загрузкой изображения и 3D модели в Minio",
                 "parameters": [
                     {
                         "type": "string",
@@ -755,8 +225,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "file",
-                        "description": "Видео",
-                        "name": "video",
+                        "description": "3D модель (.glb)",
+                        "name": "model",
                         "in": "formData",
                         "required": true
                     }
@@ -815,57 +285,33 @@ const docTemplate = `{
         },
         "/api/tire-conditions/feed": {
             "get": {
-                "description": "Для гостя is_owner = false",
+                "description": "При next=true запускается асинхронный сервис: через 5–10 секунд он присылает новые углы поворота 3D модели этой услуги (angle_x, angle_y), их видно повторным запросом по id. Лента формируется в Redis при первом обращении сессии: 100 случайных неповторяющихся опубликованных услуг с порядковыми номерами (position); гость — по куке feed_session, авторизованный — по user_id. Без id — первая услуга ленты; ?id=N — услуга N; ?id=N\u0026next=true — следующая в ленте после N; после 100-й формируются новые 100. is_liked: 0 или 1 — стоит ли лайк текущего пользователя на услуге (для гостя 0). position — порядковый номер услуги в ленте сессии (0, если услуги нет в ленте).",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "tire-conditions"
                 ],
-                "summary": "Лента опубликованных услуг",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/repository.TireConditionResponse"
-                            }
-                        }
-                    },
-                    "401": {
-                        "description": "Нет токена, токен невалиден, просрочен или отозван"
-                    },
-                    "500": {
-                        "description": "Внутренняя ошибка"
-                    }
-                }
-            }
-        },
-        "/api/tire-conditions/{id}": {
-            "get": {
-                "description": "Для гостя is_owner = false",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "tire-conditions"
-                ],
-                "summary": "Услуга по id",
+                "summary": "Одна услуга ленты",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "ID услуги",
+                        "description": "ID услуги; без параметра — первая услуга ленты",
                         "name": "id",
-                        "in": "path",
-                        "required": true
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "true — вернуть следующую услугу ленты после id",
+                        "name": "next",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/repository.TireConditionResponse"
+                            "$ref": "#/definitions/repository.FeedResponse"
                         }
                     },
                     "400": {
@@ -875,10 +321,15 @@ const docTemplate = `{
                         "description": "Нет токена, токен невалиден, просрочен или отозван"
                     },
                     "404": {
-                        "description": "Не найдено"
+                        "description": "Опубликованных услуг нет или услуга не найдена"
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка"
                     }
                 }
-            },
+            }
+        },
+        "/api/tire-conditions/{id}": {
             "delete": {
                 "security": [
                     {
@@ -914,6 +365,59 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Не найдено"
+                    },
+                    "500": {
+                        "description": "Внутренняя ошибка"
+                    }
+                }
+            }
+        },
+        "/api/tire-conditions/{id}/angles": {
+            "put": {
+                "description": "Вызывается асинхронным сервисом. Вместо JWT — постоянный ключ token в теле запроса. Углы в градусах, от 0 до 360.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "tire-conditions"
+                ],
+                "summary": "Записать новые углы поворота 3D модели услуги (результат асинхронного сервиса)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "ID услуги",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Ключ сервиса и новые углы",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.AnglesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/repository.TireConditionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Некорректные параметры"
+                    },
+                    "403": {
+                        "description": "Неверный ключ"
+                    },
+                    "404": {
+                        "description": "Услуга не найдена"
                     },
                     "500": {
                         "description": "Внутренняя ошибка"
@@ -999,7 +503,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Описание и коэффициенты (\u003e 0)",
+                        "description": "Описание, краткое описание на английском (50–100 символов) и коэффициенты (\u003e 0)",
                         "name": "body",
                         "in": "body",
                         "required": true,
@@ -1038,11 +542,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "handler.AddRequestItemRequest": {
+        "handler.AnglesRequest": {
             "type": "object",
             "properties": {
-                "tire_condition_id": {
-                    "type": "integer"
+                "angle_x": {
+                    "type": "number"
+                },
+                "angle_y": {
+                    "type": "number"
+                },
+                "token": {
+                    "type": "string"
                 }
             }
         },
@@ -1079,6 +589,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "description_en": {
+                    "type": "string"
+                },
                 "mu_surface": {
                     "type": "number"
                 },
@@ -1087,67 +600,20 @@ const docTemplate = `{
                 }
             }
         },
-        "handler.RequestItemPositionRequest": {
+        "repository.FeedResponse": {
             "type": "object",
             "properties": {
-                "position": {
-                    "type": "integer"
-                }
-            }
-        },
-        "handler.RequestSpeedRequest": {
-            "type": "object",
-            "properties": {
-                "speed_kmh": {
-                    "type": "integer"
-                }
-            }
-        },
-        "repository.CartResponse": {
-            "type": "object",
-            "properties": {
-                "items_count": {
-                    "type": "integer"
-                },
-                "request_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "repository.RequestDetailResponse": {
-            "type": "object",
-            "properties": {
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "formed_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "items": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/repository.RequestItemDetailResponse"
-                    }
-                },
-                "speed_kmh": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
-                }
-            }
-        },
-        "repository.RequestItemDetailResponse": {
-            "type": "object",
-            "properties": {
-                "braking_distance": {
+                "angle_x": {
                     "type": "number"
+                },
+                "angle_y": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "description_en": {
+                    "type": "string"
                 },
                 "id": {
                     "type": "integer"
@@ -1155,73 +621,42 @@ const docTemplate = `{
                 "image_url": {
                     "type": "string"
                 },
+                "is_liked": {
+                    "type": "integer"
+                },
+                "is_owner": {
+                    "type": "integer"
+                },
+                "model_url": {
+                    "type": "string"
+                },
+                "mu_surface": {
+                    "type": "number"
+                },
+                "mu_tire": {
+                    "type": "number"
+                },
                 "name": {
                     "type": "string"
                 },
                 "position": {
                     "type": "integer"
-                },
-                "tire_condition_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "repository.RequestItemResponse": {
-            "type": "object",
-            "properties": {
-                "braking_distance": {
-                    "type": "number"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "position": {
-                    "type": "integer"
-                },
-                "request_id": {
-                    "type": "integer"
-                },
-                "tire_condition_id": {
-                    "type": "integer"
-                }
-            }
-        },
-        "repository.RequestListItemResponse": {
-            "type": "object",
-            "properties": {
-                "completed_at": {
-                    "type": "string"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "creator_username": {
-                    "type": "string"
-                },
-                "formed_at": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "moderator_username": {
-                    "type": "string"
-                },
-                "result_count": {
-                    "type": "integer"
-                },
-                "speed_kmh": {
-                    "type": "integer"
-                },
-                "status": {
-                    "type": "string"
                 }
             }
         },
         "repository.TireConditionResponse": {
             "type": "object",
             "properties": {
+                "angle_x": {
+                    "type": "number"
+                },
+                "angle_y": {
+                    "type": "number"
+                },
                 "description": {
+                    "type": "string"
+                },
+                "description_en": {
                     "type": "string"
                 },
                 "id": {
@@ -1231,7 +666,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_owner": {
-                    "type": "boolean"
+                    "type": "integer"
+                },
+                "model_url": {
+                    "type": "string"
                 },
                 "mu_surface": {
                     "type": "number"
@@ -1241,9 +679,26 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "repository.TireConditionsPage": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/repository.TireConditionResponse"
+                    }
                 },
-                "video_url": {
-                    "type": "string"
+                "limit": {
+                    "type": "integer"
+                },
+                "page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -1276,7 +731,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "BrakePath API",
-	Description:      "Расчёт тормозного пути: услуги (состояния шин и покрытия), заявки, авторизация по JWT.",
+	Description:      "Расчёт тормозного пути: услуги (состояния шин и покрытия) и авторизация по JWT.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

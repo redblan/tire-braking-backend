@@ -5,8 +5,10 @@ import (
 	"log"
 
 	_ "tire-braking/docs"
+	"tire-braking/internal/app/asyncclient"
 	"tire-braking/internal/app/auth"
 	"tire-braking/internal/app/config"
+	"tire-braking/internal/app/feed"
 	"tire-braking/internal/app/handler"
 	"tire-braking/internal/app/redis"
 	"tire-braking/internal/app/repository"
@@ -30,9 +32,10 @@ func StartServer() {
 	if err != nil {
 		logrus.Fatalf("ошибка подключения к Redis: %v", err)
 	}
-	h := handler.NewHandler(repo, auth.NewJWTManager(cfg), auth.NewBlacklist(rdb))
+	h := handler.NewHandler(repo, auth.NewJWTManager(cfg), auth.NewBlacklist(rdb), feed.New(rdb, repo), asyncclient.New(cfg.AsyncServiceURL))
 
 	r := gin.Default()
+	r.Use(handler.CORS)
 	r.SetFuncMap(template.FuncMap{
 		"truncate": func(s string, n int) string {
 			r := []rune(s)
@@ -47,23 +50,24 @@ func StartServer() {
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// HTML-страницы ЛР1: просмотр — гость, изменение — авторизованный
+	// HTML-страницы ЛР1–2 открываются в браузере без токена; если токен передан — действия от его имени
 	r.GET("/feed/:id", h.GetFeed)
 	r.GET("/tiles", h.GetTiles)
 
-	web := r.Group("", h.OptionalAuth, h.RequireAuth)
+	web := r.Group("", h.OptionalAuth)
 	web.GET("/add", h.GetAdd)
 	web.POST("/add/create", h.PostCreate)
 	web.POST("/add/publish", h.PostPublish)
 	web.POST("/tiles/delete/:id", h.PostDelete)
 
-	// гость: регистрация, вход, чтение услуг (is_owner = false)
+	// гость: регистрация, вход, чтение услуг (is_owner = 0)
 	api := r.Group("/api", h.OptionalAuth)
 	api.POST("/register", h.PostRegisterAPI)
 	api.POST("/auth", h.PostAuthAPI)
 	api.GET("/tire-conditions", h.GetTireConditionsAPI)
 	api.GET("/tire-conditions/feed", h.GetTireConditionsFeedAPI)
-	api.GET("/tire-conditions/:id", h.GetTireConditionByIDAPI)
+	// асинхронный сервис: вместо JWT — постоянный ключ в теле запроса
+	api.PUT("/tire-conditions/:id/angles", h.PutTireConditionAnglesAPI)
 
 	// авторизованный пользователь
 	user := api.Group("", h.RequireAuth)
@@ -74,22 +78,6 @@ func StartServer() {
 	user.PUT("/tire-conditions/:id/publish", h.PutPublishTireConditionAPI)
 	user.DELETE("/tire-conditions/:id", h.DeleteTireConditionAPI)
 	user.POST("/tire-conditions/:id/like", h.PostLikeTireConditionAPI)
-
-	user.POST("/requests/items", h.PostRequestItemAPI)
-	user.PUT("/requests/items/:tire_condition_id", h.PutRequestItemAPI)
-	user.DELETE("/requests/items/:tire_condition_id", h.DeleteRequestItemAPI)
-
-	user.GET("/requests/cart", h.GetCartAPI)
-	user.GET("/requests", h.GetRequestsListAPI)
-	user.GET("/requests/:id", h.GetRequestByIDAPI)
-	user.PUT("/requests/:id", h.PutRequestSpeedAPI)
-	user.PUT("/requests/:id/form", h.PutRequestFormAPI)
-	user.DELETE("/requests/:id", h.DeleteRequestAPI)
-
-	// модератор
-	moderator := api.Group("", h.RequireModerator)
-	moderator.PUT("/requests/:id/complete", h.PutRequestCompleteAPI)
-	moderator.PUT("/requests/:id/reject", h.PutRequestRejectAPI)
 
 	r.Run()
 	log.Println("Server down")

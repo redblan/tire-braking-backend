@@ -10,6 +10,8 @@ type Config struct {
 	JWTTTL    time.Duration
 	RedisHost string
 	RedisPort string
+	// AsyncServiceURL — адрес http-метода асинхронного сервиса (NestJS)
+	AsyncServiceURL string
 }
 
 // Load — читает настройки из переменных окружения, если не заданы — значения для локального запуска
@@ -24,6 +26,8 @@ func Load() *Config {
 		JWTTTL:    ttl,
 		RedisHost: getEnv("REDIS_HOST", "localhost"),
 		RedisPort: getEnv("REDIS_PORT", "6379"),
+
+		AsyncServiceURL: getEnv("ASYNC_SERVICE_URL", "http://localhost:3001/api/rotation_async"),
 	}
 }
 

@@ -2,6 +2,8 @@ package repository
 
 import (
 	"errors"
+	"math"
+	"math/rand"
 	"time"
 
 	"gorm.io/driver/postgres"
@@ -9,26 +11,44 @@ import (
 )
 
 type TireCondition struct {
-	ID          uint       `gorm:"primaryKey"`
-	Name        string     `gorm:"column:name"`
-	Description string     `gorm:"column:description"`
-	Status      string     `gorm:"column:status"`
-	ImageURL    string     `gorm:"column:image_url"`
-	VideoURL    string     `gorm:"column:video_url"`
-	MuTire      float64    `gorm:"column:mu_tire"`
-	MuSurface   float64    `gorm:"column:mu_surface"`
-	CreatedAt   time.Time  `gorm:"column:created_at"`
-	CreatorID   uint       `gorm:"column:creator_id"`
-	PublishedAt *time.Time `gorm:"column:published_at"`
-	Likes       int64      `gorm:"-"`
+	ID          uint   `gorm:"primaryKey"`
+	Name        string `gorm:"column:name"`
+	Description string `gorm:"column:description"`
+	// DescriptionEn — краткое описание на английском (50–100 символов), по нему считается эмбеддинг для поиска по изображению
+	DescriptionEn string     `gorm:"column:description_en"`
+	Status        string     `gorm:"column:status"`
+	ImageURL      string     `gorm:"column:image_url"`
+	ModelURL      string     `gorm:"column:model_url"`
+	MuTire        float64    `gorm:"column:mu_tire"`
+	MuSurface     float64    `gorm:"column:mu_surface"`
+	AngleX        float64    `gorm:"column:angle_x"`
+	AngleY        float64    `gorm:"column:angle_y"`
+	CreatedAt     time.Time  `gorm:"column:created_at"`
+	CreatorID     uint       `gorm:"column:creator_id"`
+	PublishedAt   *time.Time `gorm:"column:published_at"`
+	Likes         int64      `gorm:"-"`
 }
 
 func (TireCondition) TableName() string { return "tire_conditions" }
 
-var ErrNotOwner = errors.New("object belongs to another user")
+var (
+	ErrNotOwner                = errors.New("object belongs to another user")
+	ErrInvalidStatusTransition = errors.New("invalid status transition")
+)
+
+// файлы по умолчанию: подставляются, если при создании услуги фото или 3D модель не выбраны
+const (
+	DefaultImageURL = "/static/images/default_tire.jpg"
+	DefaultModelURL = "/static/models/default_tire.glb"
+)
 
 type Repository struct {
 	db *gorm.DB
+}
+
+// RandomAngle — случайный угол поворота 3D модели в градусах, 0–359.99 (два знака, как в NUMERIC(5,2))
+func RandomAngle() float64 {
+	return math.Floor(rand.Float64()*36000) / 100
 }
 
 func NewRepository() (*Repository, error) {
@@ -54,6 +74,53 @@ func (r *Repository) SearchByMinTireGrip(min float64) ([]TireCondition, error) {
 	return res, err
 }
 
+// GetPublishedPage — ORM, одна страница опубликованных услуг для плитки и общее количество подходящих записей (total);
+// hasGrip = true — только услуги с mu_tire >= minGrip
+func (r *Repository) GetPublishedPage(minGrip float64, hasGrip bool, limit, offset int) ([]TireCondition, int64, error) {
+	base := r.db.Model(&TireCondition{}).Where("status = ?", "published")
+	if hasGrip {
+		base = base.Where("mu_tire >= ?", minGrip)
+	}
+
+	var total int64
+	if err := base.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var res []TireCondition
+	err := base.Session(&gorm.Session{}).Order("id").Limit(limit).Offset(offset).Find(&res).Error
+	return res, total, err
+}
+
+// RandomPublishedIDs — ORM, id случайных неповторяющихся опубликованных услуг (для ленты в Redis)
+func (r *Repository) RandomPublishedIDs(limit int) ([]uint, error) {
+	var ids []uint
+	err := r.db.Model(&TireCondition{}).Where("status = ?", "published").Order("random()").Limit(limit).Pluck("id", &ids).Error
+	return ids, err
+}
+
+// GetFeedItem — ORM, одна опубликованная услуга для ленты:
+// id = 0 — первая; next = false — услуга с этим id; next = true — следующая после id (после последней — первая)
+func (r *Repository) GetFeedItem(id uint, next bool) (TireCondition, error) {
+	var tc TireCondition
+	base := r.db.Where("status = ?", "published")
+
+	switch {
+	case id == 0:
+		err := base.Order("id").First(&tc).Error
+		return tc, err
+	case !next:
+		err := base.Where("id = ?", id).First(&tc).Error
+		return tc, err
+	}
+
+	err := r.db.Where("status = ? AND id > ?", "published", id).Order("id").First(&tc).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = r.db.Where("status = ?", "published").Order("id").First(&tc).Error
+	}
+	return tc, err
+}
+
 func (r *Repository) GetByID(id int) (TireCondition, error) {
 	var tc TireCondition
 	err := r.db.First(&tc, id).Error
@@ -74,34 +141,61 @@ func (r *Repository) FindMyDraftTireCondition(userID uint) (TireCondition, error
 	return tc, err
 }
 
-// CreateDraft — ORM, создаёт пустой черновик (кнопка "Далее" в первый раз)
-func (r *Repository) CreateDraft(creatorID uint, name string) error {
+// CreateDraft — ORM, создаёт черновик (кнопка "Далее" в первый раз); если фото или 3D модель не выбраны — файлы по умолчанию
+func (r *Repository) CreateDraft(creatorID uint, name, imageURL, modelURL string) error {
+	if imageURL == "" {
+		imageURL = DefaultImageURL
+	}
+	if modelURL == "" {
+		modelURL = DefaultModelURL
+	}
 	tc := TireCondition{
 		Name:      name,
 		Status:    "draft",
-		ImageURL:  "/static/images/default_tire.jpg",
-		VideoURL:  "/static/videos/default_tire.mp4",
+		ImageURL:  imageURL,
+		ModelURL:  modelURL,
+		AngleX:    RandomAngle(),
+		AngleY:    RandomAngle(),
 		CreatorID: creatorID,
 		CreatedAt: time.Now(),
 	}
 	return r.db.Create(&tc).Error
 }
 
-// CreateTireCondition — ORM, создаёт услугу через API (POST /api/tire-conditions), статус "draft" по умолчанию
-func (r *Repository) CreateTireCondition(name, description, imageURL, videoURL string, muTire, muSurface float64, creatorID uint) (TireCondition, error) {
+// CreateTireCondition — ORM, создаёт услугу через API (POST /api/tire-conditions), статус "draft" по умолчанию;
+// углы поворота 3D модели инициализируются случайно
+func (r *Repository) CreateTireCondition(name, description, imageURL, modelURL string, muTire, muSurface float64, creatorID uint) (TireCondition, error) {
 	tc := TireCondition{
 		Name:        name,
 		Description: description,
 		Status:      "draft",
 		ImageURL:    imageURL,
-		VideoURL:    videoURL,
+		ModelURL:    modelURL,
 		MuTire:      muTire,
 		MuSurface:   muSurface,
+		AngleX:      RandomAngle(),
+		AngleY:      RandomAngle(),
 		CreatorID:   creatorID,
 		CreatedAt:   time.Now(),
 	}
 	err := r.db.Create(&tc).Error
 	return tc, err
+}
+
+// UpdateAngles — ORM, записывает новые углы поворота 3D модели услуги (результат асинхронного сервиса);
+// услуга не найдена -> gorm.ErrRecordNotFound
+func (r *Repository) UpdateAngles(id uint, angleX, angleY float64) error {
+	res := r.db.Model(&TireCondition{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"angle_x": angleX,
+		"angle_y": angleY,
+	})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 // Publish — ORM, смена статуса черновика на опубликован + заполнение полей темы
@@ -119,7 +213,7 @@ func (r *Repository) Publish(id uint, name, description string, muTire, muSurfac
 
 // PublishTireCondition — ORM, в транзакции: draft -> published + заполнение полей; не черновик -> ErrInvalidStatusTransition;
 // чужая услуга -> ErrNotOwner (модератору проверка владельца не нужна)
-func (r *Repository) PublishTireCondition(id uint, description string, muTire, muSurface float64, userID uint, isModerator bool) error {
+func (r *Repository) PublishTireCondition(id uint, description, descriptionEn string, muTire, muSurface float64, userID uint, isModerator bool) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var tc TireCondition
 		if err := tx.First(&tc, id).Error; err != nil {
@@ -133,11 +227,12 @@ func (r *Repository) PublishTireCondition(id uint, description string, muTire, m
 		}
 
 		return tx.Model(&TireCondition{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"status":       "published",
-			"description":  description,
-			"mu_tire":      muTire,
-			"mu_surface":   muSurface,
-			"published_at": time.Now(),
+			"status":         "published",
+			"description":    description,
+			"description_en": descriptionEn,
+			"mu_tire":        muTire,
+			"mu_surface":     muSurface,
+			"published_at":   time.Now(),
 		}).Error
 	})
 }
@@ -192,4 +287,11 @@ func (r *Repository) CountLikes(tireConditionID uint) (int64, error) {
 	var count int64
 	err := r.db.Table("likes").Where("tire_condition_id = ?", tireConditionID).Count(&count).Error
 	return count, err
+}
+
+// IsLiked — стоит ли лайк пользователя на услуге
+func (r *Repository) IsLiked(tireConditionID, userID uint) (bool, error) {
+	var count int64
+	err := r.db.Table("likes").Where("tire_condition_id = ? AND user_id = ?", tireConditionID, userID).Count(&count).Error
+	return count > 0, err
 }

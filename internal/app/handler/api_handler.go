@@ -6,72 +6,166 @@ import (
 	"strconv"
 	"time"
 
+	"tire-braking/internal/app/feed"
 	"tire-braking/internal/app/repository"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
-// GetTireConditionsAPI — GET /api/tire-conditions, опциональный ?grip= фильтр по mu_tire
+// listDefaultLimit и listMaxLimit — размер страницы списка по умолчанию и верхняя граница limit
+const (
+	listDefaultLimit = 10
+	listMaxLimit     = 100
+)
+
+// GetTireConditionsAPI — GET /api/tire-conditions, страница списка с опциональным ?grip= фильтром по mu_tire
 //
-// @Summary     Список опубликованных услуг
-// @Description Для гостя is_owner = false
+// @Summary     Список опубликованных услуг (страница)
+// @Description Пагинация: page (с 1) и limit (по умолчанию 10, максимум 100). total — число услуг, подходящих под фильтр. is_owner: 0 или 1 — создатель услуги совпадает с текущим пользователем (для гостя 0)
 // @Tags        tire-conditions
 // @Produce     json
-// @Param       grip query number false "Минимальный коэффициент сцепления шины (mu_tire)"
-// @Success     200 {array} repository.TireConditionResponse
+// @Param       grip  query number false "Минимальный коэффициент сцепления шины (mu_tire)"
+// @Param       page  query int    false "Номер страницы, с 1" default(1)
+// @Param       limit query int    false "Размер страницы, максимум 100" default(10)
+// @Success     200 {object} repository.TireConditionsPage
+// @Failure     400 "Некорректные page или limit"
 // @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
 // @Failure     500 "Внутренняя ошибка"
 // @Router      /api/tire-conditions [get]
 func (h *Handler) GetTireConditionsAPI(ctx *gin.Context) {
-	gripStr := ctx.Query("grip")
-
-	var services []repository.TireCondition
-	var err error
-	if gripStr != "" {
-		services, err = h.Repository.SearchByMinTireGrip(parseDecimal(gripStr))
-	} else {
-		services, err = h.Repository.GetPublished()
+	page, err := strconv.Atoi(ctx.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		ctx.Status(http.StatusBadRequest)
+		return
 	}
+	limit, err := strconv.Atoi(ctx.DefaultQuery("limit", strconv.Itoa(listDefaultLimit)))
+	if err != nil || limit < 1 {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+	if limit > listMaxLimit {
+		limit = listMaxLimit
+	}
+	offset := (page - 1) * limit
+
+	gripStr := ctx.Query("grip")
+	services, total, err := h.Repository.GetPublishedPage(parseDecimal(gripStr), gripStr != "", limit, offset)
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return
 	}
 
-	response := make([]repository.TireConditionResponse, len(services))
+	data := make([]repository.TireConditionResponse, len(services))
 	for i, s := range services {
-		response[i] = s.ToResponse()
+		data[i] = s.ToResponse()
+		data[i].IsOwner = ownerFlag(ctx, s.CreatorID)
 	}
-	for i := range response {
-		response[i].IsOwner = isOwner(ctx, services[i].CreatorID)
+	ctx.JSON(http.StatusOK, repository.TireConditionsPage{Total: total, Page: page, Limit: limit, Data: data})
+}
+
+// GetTireConditionsFeedAPI — GET /api/tire-conditions/feed, одна услуга ленты сессии из Redis
+//
+// @Summary     Одна услуга ленты
+// @Description При next=true запускается асинхронный сервис: через 5–10 секунд он присылает новые углы поворота 3D модели этой услуги (angle_x, angle_y), их видно повторным запросом по id. Лента формируется в Redis при первом обращении сессии: 100 случайных неповторяющихся опубликованных услуг с порядковыми номерами (position); гость — по куке feed_session, авторизованный — по user_id. Без id — первая услуга ленты; ?id=N — услуга N; ?id=N&next=true — следующая в ленте после N; после 100-й формируются новые 100. is_liked: 0 или 1 — стоит ли лайк текущего пользователя на услуге (для гостя 0). position — порядковый номер услуги в ленте сессии (0, если услуги нет в ленте).
+// @Tags        tire-conditions
+// @Produce     json
+// @Param       id   query int  false "ID услуги; без параметра — первая услуга ленты"
+// @Param       next query bool false "true — вернуть следующую услугу ленты после id"
+// @Success     200 {object} repository.FeedResponse
+// @Failure     400 "Некорректные параметры"
+// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
+// @Failure     404 "Опубликованных услуг нет или услуга не найдена"
+// @Failure     500 "Внутренняя ошибка"
+// @Router      /api/tire-conditions/feed [get]
+func (h *Handler) GetTireConditionsFeedAPI(ctx *gin.Context) {
+	id := 0
+	if idStr := ctx.Query("id"); idStr != "" {
+		var err error
+		id, err = strconv.Atoi(idStr)
+		if err != nil || id < 0 {
+			ctx.Status(http.StatusBadRequest)
+			return
+		}
+	}
+	next := ctx.Query("next") == "true"
+
+	session := feedSession(ctx)
+	reqCtx := ctx.Request.Context()
+
+	ids, err := h.Feed.Ensure(reqCtx, session)
+	if err != nil {
+		feedError(ctx, err)
+		return
+	}
+
+	// какую услугу отдать: первую ленты, указанную по id или следующую после id
+	targetID := ids[0]
+	if id != 0 {
+		_, idx := feed.Position(ids, uint(id))
+		switch {
+		case !next:
+			targetID = uint(id)
+		case idx == len(ids)-1:
+			// просмотрены все карточки ленты — формируются новые 100
+			if ids, err = h.Feed.Rebuild(reqCtx, session); err != nil {
+				feedError(ctx, err)
+				return
+			}
+			targetID = ids[0]
+		case idx >= 0:
+			targetID = ids[idx+1]
+		}
+	}
+
+	tc, err := h.Repository.GetFeedItem(targetID, false)
+	if errors.Is(err, gorm.ErrRecordNotFound) && next {
+		// услугу ленты успели удалить — формируем ленту заново
+		if ids, err = h.Feed.Rebuild(reqCtx, session); err != nil {
+			feedError(ctx, err)
+			return
+		}
+		tc, err = h.Repository.GetFeedItem(ids[0], false)
+	}
+	if err != nil {
+		feedError(ctx, err)
+		return
+	}
+
+	if next {
+		// отложенное действие: асинхронный сервис через 5–10 секунд пришлёт новые углы 3D модели этой услуги
+		go func(id uint, angleX, angleY float64) {
+			if err := h.Async.RequestRotation(id, angleX, angleY); err != nil {
+				logrus.Errorf("асинхронный сервис недоступен: %v", err)
+			}
+		}(tc.ID, tc.AngleX, tc.AngleY)
+	}
+
+	position, _ := feed.Position(ids, tc.ID)
+	response := repository.FeedResponse{TireConditionResponse: tc.ToResponse(), Position: position}
+	response.IsOwner = ownerFlag(ctx, tc.CreatorID)
+	if userID, ok := currentUserID(ctx); ok {
+		liked, err := h.Repository.IsLiked(tc.ID, userID)
+		if err != nil {
+			ctx.Status(http.StatusInternalServerError)
+			return
+		}
+		if liked {
+			response.IsLiked = 1
+		}
 	}
 	ctx.JSON(http.StatusOK, response)
 }
 
-// GetTireConditionsFeedAPI — GET /api/tire-conditions/feed, все опубликованные услуги без фильтра
-//
-// @Summary     Лента опубликованных услуг
-// @Description Для гостя is_owner = false
-// @Tags        tire-conditions
-// @Produce     json
-// @Success     200 {array} repository.TireConditionResponse
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/tire-conditions/feed [get]
-func (h *Handler) GetTireConditionsFeedAPI(ctx *gin.Context) {
-	services, err := h.Repository.GetPublished()
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
+// feedError — 404, если услуги нет (нет опубликованных или услуга не найдена), иначе 500
+func feedError(ctx *gin.Context, err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, feed.ErrEmpty) {
+		ctx.Status(http.StatusNotFound)
 		return
 	}
-
-	response := make([]repository.TireConditionResponse, len(services))
-	for i, s := range services {
-		response[i] = s.ToResponse()
-		response[i].IsOwner = isOwner(ctx, s.CreatorID)
-	}
-	ctx.JSON(http.StatusOK, response)
+	ctx.Status(http.StatusInternalServerError)
 }
 
 // GetMyDraftTireConditionAPI — GET /api/tire-conditions/draft, черновик услуги текущего пользователя
@@ -98,43 +192,13 @@ func (h *Handler) GetMyDraftTireConditionAPI(ctx *gin.Context) {
 	}
 
 	response := tc.ToResponse()
-	response.IsOwner = true
-	ctx.JSON(http.StatusOK, response)
-}
-
-// GetTireConditionByIDAPI — GET /api/tire-conditions/:id
-//
-// @Summary     Услуга по id
-// @Description Для гостя is_owner = false
-// @Tags        tire-conditions
-// @Produce     json
-// @Param       id path int true "ID услуги"
-// @Success     200 {object} repository.TireConditionResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     404 "Не найдено"
-// @Router      /api/tire-conditions/{id} [get]
-func (h *Handler) GetTireConditionByIDAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	tc, err := h.Repository.GetByID(id)
-	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return
-	}
-
-	response := tc.ToResponse()
-	response.IsOwner = isOwner(ctx, tc.CreatorID)
+	response.IsOwner = 1
 	ctx.JSON(http.StatusOK, response)
 }
 
 // PostTireConditionAPI — POST /api/tire-conditions, multipart/form-data
 //
-// @Summary     Создать услугу (черновик) с загрузкой изображения и видео в Minio
+// @Summary     Создать услугу (черновик) с загрузкой изображения и 3D модели в Minio
 // @Tags        tire-conditions
 // @Accept      multipart/form-data
 // @Produce     json
@@ -144,7 +208,7 @@ func (h *Handler) GetTireConditionByIDAPI(ctx *gin.Context) {
 // @Param       mu_tire     formData number false "Коэффициент сцепления шины"
 // @Param       mu_surface  formData number false "Коэффициент сцепления покрытия"
 // @Param       image       formData file   true  "Изображение"
-// @Param       video       formData file   true  "Видео"
+// @Param       model       formData file   true  "3D модель (.glb)"
 // @Success     201 {object} repository.TireConditionResponse
 // @Failure     400 "Некорректные параметры"
 // @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
@@ -167,12 +231,12 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 	}
 	defer imageFile.Close()
 
-	videoFile, videoHeader, err := ctx.Request.FormFile("video")
+	modelFile, modelHeader, err := ctx.Request.FormFile("model")
 	if err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return
 	}
-	defer videoFile.Close()
+	defer modelFile.Close()
 
 	imageURL, err := repository.UploadFile(imageFile, imageHeader, "tire")
 	if err != nil {
@@ -180,14 +244,14 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 		return
 	}
 
-	videoURL, err := repository.UploadFile(videoFile, videoHeader, "tire")
+	modelURL, err := repository.UploadFile(modelFile, modelHeader, "tire")
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return
 	}
 
 	userID, _ := currentUserID(ctx)
-	tc, err := h.Repository.CreateTireCondition(name, description, imageURL, videoURL, muTire, muSurface, userID)
+	tc, err := h.Repository.CreateTireCondition(name, description, imageURL, modelURL, muTire, muSurface, userID)
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return
@@ -196,7 +260,8 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 	ctx.JSON(http.StatusCreated, tc.ToResponse())
 }
 
-// PutPublishTireConditionAPI — PUT /api/tire-conditions/:id/publish, body {"description": "...", "mu_tire": число, "mu_surface": число}
+// PutPublishTireConditionAPI — PUT /api/tire-conditions/:id/publish,
+// body {"description": "...", "description_en": "...", "mu_tire": число, "mu_surface": число}
 //
 // @Summary     Опубликовать черновик услуги
 // @Description Своя услуга; модератор — любая
@@ -205,7 +270,7 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 // @Produce     json
 // @Security    BearerAuth
 // @Param       id   path int true "ID услуги"
-// @Param       body body PublishTireConditionRequest true "Описание и коэффициенты (> 0)"
+// @Param       body body PublishTireConditionRequest true "Описание, краткое описание на английском (50–100 символов) и коэффициенты (> 0)"
 // @Success     200 {object} repository.TireConditionResponse
 // @Failure     400 "Некорректные параметры"
 // @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
@@ -228,8 +293,13 @@ func (h *Handler) PutPublishTireConditionAPI(ctx *gin.Context) {
 		return
 	}
 
+	if !validDescriptionEn(body.DescriptionEn) {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
 	userID, _ := currentUserID(ctx)
-	if err := h.Repository.PublishTireCondition(uint(id), body.Description, body.MuTire, body.MuSurface, userID, isModerator(ctx)); err != nil {
+	if err := h.Repository.PublishTireCondition(uint(id), body.Description, body.DescriptionEn, body.MuTire, body.MuSurface, userID, isModerator(ctx)); err != nil {
 		ctx.Status(statusTransitionErrorCode(err))
 		return
 	}
@@ -241,8 +311,85 @@ func (h *Handler) PutPublishTireConditionAPI(ctx *gin.Context) {
 	}
 
 	response := tc.ToResponse()
-	response.IsOwner = isOwner(ctx, tc.CreatorID)
+	response.IsOwner = ownerFlag(ctx, tc.CreatorID)
 	ctx.JSON(http.StatusOK, response)
+}
+
+// validDescriptionEn — краткое описание на английском: пустое или 50–100 печатных символов ASCII (без кириллицы)
+func validDescriptionEn(s string) bool {
+	if s == "" {
+		return true
+	}
+	if len(s) < 50 || len(s) > 100 {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
+// asyncServiceToken — постоянный ключ (8 байт), которым асинхронный сервис подписывает свои запросы
+const asyncServiceToken = "bp3dTk01"
+
+// PutTireConditionAnglesAPI — PUT /api/tire-conditions/:id/angles, body {"token": "...", "angle_x": число, "angle_y": число}
+//
+// @Summary     Записать новые углы поворота 3D модели услуги (результат асинхронного сервиса)
+// @Description Вызывается асинхронным сервисом. Вместо JWT — постоянный ключ token в теле запроса. Углы в градусах, от 0 до 360.
+// @Tags        tire-conditions
+// @Accept      json
+// @Produce     json
+// @Param       id   path int true "ID услуги"
+// @Param       body body AnglesRequest true "Ключ сервиса и новые углы"
+// @Success     200 {object} repository.TireConditionResponse
+// @Failure     400 "Некорректные параметры"
+// @Failure     403 "Неверный ключ"
+// @Failure     404 "Услуга не найдена"
+// @Failure     500 "Внутренняя ошибка"
+// @Router      /api/tire-conditions/{id}/angles [put]
+func (h *Handler) PutTireConditionAnglesAPI(ctx *gin.Context) {
+	id, err := strconv.Atoi(ctx.Param("id"))
+	if err != nil || id < 1 {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	var body AnglesRequest
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+	if body.Token != asyncServiceToken {
+		ctx.Status(http.StatusForbidden)
+		return
+	}
+	if body.AngleX == nil || body.AngleY == nil || !validAngle(*body.AngleX) || !validAngle(*body.AngleY) {
+		ctx.Status(http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Repository.UpdateAngles(uint(id), *body.AngleX, *body.AngleY); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			ctx.Status(http.StatusNotFound)
+			return
+		}
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+
+	tc, err := h.Repository.GetByID(id)
+	if err != nil {
+		ctx.Status(http.StatusInternalServerError)
+		return
+	}
+	ctx.JSON(http.StatusOK, tc.ToResponse())
+}
+
+// validAngle — угол в градусах от 0 до 360
+func validAngle(v float64) bool {
+	return v >= 0 && v <= 360
 }
 
 // DeleteTireConditionAPI — DELETE /api/tire-conditions/:id, логическое удаление; своей услуги, модератору — любой
@@ -312,139 +459,6 @@ func (h *Handler) PostLikeTireConditionAPI(ctx *gin.Context) {
 
 	userID, _ := currentUserID(ctx)
 	err = h.Repository.ToggleLike(uint(id), userID, *body.Value)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return
-		}
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.Status(http.StatusNoContent)
-}
-
-// PostRequestItemAPI — POST /api/requests/items, body {"tire_condition_id": число}
-//
-// @Summary     Добавить услугу в корзину (черновик заявки)
-// @Description Черновик заявки создаётся автоматически, если его нет
-// @Tags        request-items
-// @Accept      json
-// @Produce     json
-// @Security    BearerAuth
-// @Param       body body AddRequestItemRequest true "ID услуги"
-// @Success     201 {object} repository.RequestItemResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     404 "Услуга не найдена или не опубликована"
-// @Failure     409 "Услуга уже в заявке"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/items [post]
-func (h *Handler) PostRequestItemAPI(ctx *gin.Context) {
-	var body AddRequestItemRequest
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	userID, _ := currentUserID(ctx)
-	item, err := h.Repository.AddItemToDraftRequest(userID, body.TireConditionID)
-	if err != nil {
-		switch {
-		case errors.Is(err, repository.ErrDuplicateRequestItem):
-			ctx.Status(http.StatusConflict)
-		case errors.Is(err, repository.ErrTireConditionUnavailable):
-			ctx.Status(http.StatusNotFound)
-		default:
-			ctx.Status(http.StatusInternalServerError)
-		}
-		return
-	}
-
-	ctx.JSON(http.StatusCreated, item.ToResponse())
-}
-
-// PutRequestItemAPI — PUT /api/requests/items/:tire_condition_id, body {"position": число}
-//
-// @Summary     Изменить позицию услуги в черновике заявки
-// @Tags        request-items
-// @Accept      json
-// @Produce     json
-// @Security    BearerAuth
-// @Param       tire_condition_id path int true "ID услуги"
-// @Param       body body RequestItemPositionRequest true "Новая позиция"
-// @Success     200 {object} repository.RequestItemResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     404 "Нет черновика или услуги в нём"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/items/{tire_condition_id} [put]
-func (h *Handler) PutRequestItemAPI(ctx *gin.Context) {
-	tireConditionID, err := strconv.Atoi(ctx.Param("tire_condition_id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	var body RequestItemPositionRequest
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	userID, _ := currentUserID(ctx)
-	req, err := h.Repository.FindDraftRequest(userID)
-	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return
-	}
-
-	err = h.Repository.UpdateRequestItemPosition(req.ID, uint(tireConditionID), body.Position)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			ctx.Status(http.StatusNotFound)
-			return
-		}
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	item, err := h.Repository.GetRequestItem(req.ID, uint(tireConditionID))
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, item.ToResponse())
-}
-
-// DeleteRequestItemAPI — DELETE /api/requests/items/:tire_condition_id
-//
-// @Summary     Удалить услугу из черновика заявки
-// @Tags        request-items
-// @Security    BearerAuth
-// @Param       tire_condition_id path int true "ID услуги"
-// @Success     204 "Удалено"
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     404 "Нет черновика или услуги в нём"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/items/{tire_condition_id} [delete]
-func (h *Handler) DeleteRequestItemAPI(ctx *gin.Context) {
-	tireConditionID, err := strconv.Atoi(ctx.Param("tire_condition_id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	userID, _ := currentUserID(ctx)
-	req, err := h.Repository.FindDraftRequest(userID)
-	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return
-	}
-
-	err = h.Repository.DeleteRequestItem(req.ID, uint(tireConditionID))
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.Status(http.StatusNotFound)
@@ -571,7 +585,7 @@ func (h *Handler) PostLogoutAPI(ctx *gin.Context) {
 		return
 	}
 
-	if err := h.Blacklist.AddToBlacklist(ctx.Request.Context(), token, time.Until(claims.ExpiresAt.Time)); err != nil {
+	if err := h.Blacklist.AddToBlacklist(ctx.Request.Context(), token, claims.UserID, time.Until(claims.ExpiresAt.Time)); err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return
 	}
@@ -579,7 +593,7 @@ func (h *Handler) PostLogoutAPI(ctx *gin.Context) {
 	ctx.Status(http.StatusNoContent)
 }
 
-// statusTransitionErrorCode — маппинг ошибок доменных переходов статуса заявки в HTTP-код
+// statusTransitionErrorCode — маппинг ошибок смены статуса услуги в HTTP-код
 func statusTransitionErrorCode(err error) int {
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
@@ -588,343 +602,7 @@ func statusTransitionErrorCode(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, repository.ErrInvalidStatusTransition):
 		return http.StatusConflict
-	case errors.Is(err, repository.ErrRequestNotReadyToForm):
-		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
 	}
-}
-
-// checkRequestAccess — обычный пользователь работает только со своей заявкой (чужая -> 403, нет -> 404);
-// allowModerator — модератору доступна любая. false — ответ уже записан в ctx
-func (h *Handler) checkRequestAccess(ctx *gin.Context, id uint, allowModerator bool) bool {
-	if allowModerator && isModerator(ctx) {
-		return true
-	}
-
-	userID, _ := currentUserID(ctx)
-	if err := h.Repository.CheckRequestOwner(id, userID); err != nil {
-		switch {
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			ctx.Status(http.StatusNotFound)
-		case errors.Is(err, repository.ErrNotOwner):
-			ctx.Status(http.StatusForbidden)
-		default:
-			ctx.Status(http.StatusInternalServerError)
-		}
-		return false
-	}
-	return true
-}
-
-// GetCartAPI — GET /api/requests/cart
-//
-// @Summary     Корзина: id черновика заявки и число услуг в нём
-// @Description request_id = null, если черновика нет
-// @Tags        requests
-// @Produce     json
-// @Security    BearerAuth
-// @Success     200 {object} repository.CartResponse
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/cart [get]
-func (h *Handler) GetCartAPI(ctx *gin.Context) {
-	userID, _ := currentUserID(ctx)
-	requestID, itemsCount, err := h.Repository.GetCartInfo(userID)
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, repository.CartResponse{RequestID: requestID, ItemsCount: itemsCount})
-}
-
-// GetRequestsListAPI — GET /api/requests, ?status=&date_from=&date_to= (даты в формате 2026-01-01);
-// пользователь видит только свои заявки, модератор — все
-//
-// @Summary     Список заявок (без черновиков и удалённых)
-// @Description Пользователь видит свои заявки, модератор — все
-// @Tags        requests
-// @Produce     json
-// @Security    BearerAuth
-// @Param       status    query string false "Статус: formed, completed, rejected"
-// @Param       date_from query string false "Дата формирования от, 2006-01-02"
-// @Param       date_to   query string false "Дата формирования до, 2006-01-02"
-// @Success     200 {array} repository.RequestListItemResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests [get]
-func (h *Handler) GetRequestsListAPI(ctx *gin.Context) {
-	statusFilter := ctx.Query("status")
-
-	var dateFrom, dateTo *time.Time
-	if s := ctx.Query("date_from"); s != "" {
-		t, err := time.Parse("2006-01-02", s)
-		if err != nil {
-			ctx.Status(http.StatusBadRequest)
-			return
-		}
-		dateFrom = &t
-	}
-	if s := ctx.Query("date_to"); s != "" {
-		t, err := time.Parse("2006-01-02", s)
-		if err != nil {
-			ctx.Status(http.StatusBadRequest)
-			return
-		}
-		dateTo = &t
-	}
-
-	var creatorID *uint
-	if !isModerator(ctx) {
-		userID, _ := currentUserID(ctx)
-		creatorID = &userID
-	}
-
-	rows, err := h.Repository.GetRequestsList(statusFilter, dateFrom, dateTo, creatorID)
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	response := make([]repository.RequestListItemResponse, len(rows))
-	for i, row := range rows {
-		response[i] = row.ToResponse()
-	}
-	ctx.JSON(http.StatusOK, response)
-}
-
-// GetRequestByIDAPI — GET /api/requests/:id
-//
-// @Summary     Заявка с составом
-// @Description Своя заявка; модератор — любая
-// @Tags        requests
-// @Produce     json
-// @Security    BearerAuth
-// @Param       id path int true "ID заявки"
-// @Success     200 {object} repository.RequestDetailResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     403 "Нет прав / чужой объект"
-// @Failure     404 "Не найдено"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/{id} [get]
-func (h *Handler) GetRequestByIDAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	if !h.checkRequestAccess(ctx, uint(id), true) {
-		return
-	}
-
-	req, items, err := h.Repository.GetRequestWithItems(uint(id))
-	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, repository.ToRequestDetailResponse(req, items))
-}
-
-// PutRequestSpeedAPI — PUT /api/requests/:id, body {"speed_kmh": число}
-//
-// @Summary     Задать скорость в заявке
-// @Description Только своя заявка
-// @Tags        requests
-// @Accept      json
-// @Produce     json
-// @Security    BearerAuth
-// @Param       id   path int true "ID заявки"
-// @Param       body body RequestSpeedRequest true "Скорость, км/ч"
-// @Success     200 {object} repository.RequestDetailResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     403 "Нет прав / чужой объект"
-// @Failure     404 "Не найдено"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/{id} [put]
-func (h *Handler) PutRequestSpeedAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	if !h.checkRequestAccess(ctx, uint(id), false) {
-		return
-	}
-
-	var body RequestSpeedRequest
-	if err := ctx.ShouldBindJSON(&body); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	if err := h.Repository.UpdateRequestSpeed(uint(id), body.SpeedKmh); err != nil {
-		ctx.Status(http.StatusNotFound)
-		return
-	}
-
-	req, items, err := h.Repository.GetRequestWithItems(uint(id))
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, repository.ToRequestDetailResponse(req, items))
-}
-
-// PutRequestFormAPI — PUT /api/requests/:id/form, draft -> formed
-//
-// @Summary     Сформировать заявку (draft -> formed), расчёт тормозного пути
-// @Description Только своя заявка
-// @Tags        requests
-// @Produce     json
-// @Security    BearerAuth
-// @Param       id path int true "ID заявки"
-// @Success     200 {object} repository.RequestDetailResponse
-// @Failure     400 "Не задана скорость или пустой состав"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     403 "Нет прав / чужой объект"
-// @Failure     404 "Не найдено"
-// @Failure     409 "Недопустимый переход статуса"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/{id}/form [put]
-func (h *Handler) PutRequestFormAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	if !h.checkRequestAccess(ctx, uint(id), false) {
-		return
-	}
-
-	if err := h.Repository.FormRequest(uint(id)); err != nil {
-		ctx.Status(statusTransitionErrorCode(err))
-		return
-	}
-
-	req, items, err := h.Repository.GetRequestWithItems(uint(id))
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, repository.ToRequestDetailResponse(req, items))
-}
-
-// PutRequestCompleteAPI — PUT /api/requests/:id/complete, formed -> completed (moderator_id из токена)
-//
-// @Summary     Завершить заявку (formed -> completed)
-// @Description Только модератор; moderator_id берётся из токена
-// @Tags        requests
-// @Produce     json
-// @Security    BearerAuth
-// @Param       id path int true "ID заявки"
-// @Success     200 {object} repository.RequestDetailResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     403 "Не модератор"
-// @Failure     404 "Не найдено"
-// @Failure     409 "Недопустимый переход статуса"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/{id}/complete [put]
-func (h *Handler) PutRequestCompleteAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	moderatorID, _ := currentUserID(ctx)
-	if err := h.Repository.CompleteRequest(uint(id), moderatorID); err != nil {
-		ctx.Status(statusTransitionErrorCode(err))
-		return
-	}
-
-	req, items, err := h.Repository.GetRequestWithItems(uint(id))
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, repository.ToRequestDetailResponse(req, items))
-}
-
-// PutRequestRejectAPI — PUT /api/requests/:id/reject, formed -> rejected (moderator_id из токена)
-//
-// @Summary     Отклонить заявку (formed -> rejected)
-// @Description Только модератор; moderator_id берётся из токена
-// @Tags        requests
-// @Produce     json
-// @Security    BearerAuth
-// @Param       id path int true "ID заявки"
-// @Success     200 {object} repository.RequestDetailResponse
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     403 "Не модератор"
-// @Failure     404 "Не найдено"
-// @Failure     409 "Недопустимый переход статуса"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/{id}/reject [put]
-func (h *Handler) PutRequestRejectAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	moderatorID, _ := currentUserID(ctx)
-	if err := h.Repository.RejectRequest(uint(id), moderatorID); err != nil {
-		ctx.Status(statusTransitionErrorCode(err))
-		return
-	}
-
-	req, items, err := h.Repository.GetRequestWithItems(uint(id))
-	if err != nil {
-		ctx.Status(http.StatusInternalServerError)
-		return
-	}
-
-	ctx.JSON(http.StatusOK, repository.ToRequestDetailResponse(req, items))
-}
-
-// DeleteRequestAPI — DELETE /api/requests/:id, draft -> deleted (логическое удаление)
-//
-// @Summary     Удалить черновик заявки (логически)
-// @Description Только своя заявка
-// @Tags        requests
-// @Security    BearerAuth
-// @Param       id path int true "ID заявки"
-// @Success     204 "Удалено"
-// @Failure     400 "Некорректные параметры"
-// @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
-// @Failure     403 "Нет прав / чужой объект"
-// @Failure     404 "Не найдено"
-// @Failure     409 "Недопустимый переход статуса"
-// @Failure     500 "Внутренняя ошибка"
-// @Router      /api/requests/{id} [delete]
-func (h *Handler) DeleteRequestAPI(ctx *gin.Context) {
-	id, err := strconv.Atoi(ctx.Param("id"))
-	if err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return
-	}
-
-	if !h.checkRequestAccess(ctx, uint(id), false) {
-		return
-	}
-
-	if err := h.Repository.DeleteRequest(uint(id)); err != nil {
-		ctx.Status(statusTransitionErrorCode(err))
-		return
-	}
-
-	ctx.Status(http.StatusNoContent)
 }

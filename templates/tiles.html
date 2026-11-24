@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Тормозной путь — Плитка</title>
-<link rel="stylesheet" href="/static/styles/main.css?v=3">
+<link rel="stylesheet" href="/static/styles/main.css?v=6">
 </head>
 <body>
 <div class="app">
@@ -18,7 +18,7 @@
       {{range .services}}
       <div class="tile-card">
         <a href="/feed/{{.ID}}" class="tile-card-link">
-          <img src="{{.ImageURL}}" alt="{{.Name}}">
+          <img src="{{.ImageURL}}" alt="{{.Name}}" onerror="this.onerror=null;this.src='/static/images/default_tire.jpg'">
           <p>{{.Name}}</p>
           <span class="tile-likes">♥ {{.Likes}}</span>
         </a>

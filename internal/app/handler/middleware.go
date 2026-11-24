@@ -57,6 +57,19 @@ func (h *Handler) OptionalAuth(ctx *gin.Context) {
 	ctx.Next()
 }
 
+// CORS — разрешает запросы с другого источника: нативное приложение Tauri обращается к API
+// напрямую по IP компьютера в локальной сети, а не через прокси фронтенда
+func CORS(ctx *gin.Context) {
+	ctx.Header("Access-Control-Allow-Origin", "*")
+	ctx.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, Origin")
+	ctx.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	if ctx.Request.Method == http.MethodOptions {
+		ctx.AbortWithStatus(http.StatusNoContent)
+		return
+	}
+	ctx.Next()
+}
+
 // RequireAuth — 401, если в контексте нет пользователя (ставится после OptionalAuth)
 func (h *Handler) RequireAuth(ctx *gin.Context) {
 	if _, ok := currentUserID(ctx); !ok {
@@ -96,4 +109,12 @@ func isModerator(ctx *gin.Context) bool {
 func isOwner(ctx *gin.Context, creatorID uint) bool {
 	userID, ok := currentUserID(ctx)
 	return ok && userID == creatorID
+}
+
+// ownerFlag — признак 0/1 для JSON: 1, если услугу создал текущий пользователь; для гостя всегда 0
+func ownerFlag(ctx *gin.Context, creatorID uint) int {
+	if isOwner(ctx, creatorID) {
+		return 1
+	}
+	return 0
 }

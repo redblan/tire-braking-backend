@@ -1,0 +1,11 @@
+# логи и служебные скрипты проверки
+*.log
+run_dops.sh
+demo_indexes.sh
+make_branches.sh
+
+# служебное
+.claude/
+.DS_Store
+.idea/
+.vscode/

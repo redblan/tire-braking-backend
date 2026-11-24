@@ -4,7 +4,7 @@ import "tire-braking/internal/api"
 
 // @title                      BrakePath API
 // @version                    1.0
-// @description                Расчёт тормозного пути: услуги (состояния шин и покрытия), заявки, авторизация по JWT.
+// @description                Расчёт тормозного пути: услуги (состояния шин и покрытия) и авторизация по JWT.
 // @host                       localhost:8080
 // @BasePath                   /
 // @securityDefinitions.apikey BearerAuth

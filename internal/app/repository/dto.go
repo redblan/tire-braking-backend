@@ -1,49 +1,53 @@
 package repository
 
-import "time"
-
 // TireConditionResponse — DTO для JSON-ответов по Услуге.
 // Статус (внутреннее поле БД) наружу не отдаётся.
-// IsOwner заполняется в хендлере — там известен текущий пользователь.
+// IsOwner — признак 0/1: 1, если создатель услуги совпадает с текущим пользователем (для гостя всегда 0).
+// Заполняется в хендлере — там известен текущий пользователь.
+// AngleX, AngleY — углы поворота 3D модели в градусах (0–360).
 type TireConditionResponse struct {
-	ID          uint    `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	ImageURL    string  `json:"image_url"`
-	VideoURL    string  `json:"video_url"`
-	MuTire      float64 `json:"mu_tire"`
-	MuSurface   float64 `json:"mu_surface"`
-	IsOwner     bool    `json:"is_owner"`
+	ID            uint    `json:"id"`
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	DescriptionEn string  `json:"description_en"`
+	ImageURL      string  `json:"image_url"`
+	ModelURL      string  `json:"model_url"`
+	MuTire        float64 `json:"mu_tire"`
+	MuSurface     float64 `json:"mu_surface"`
+	AngleX        float64 `json:"angle_x"`
+	AngleY        float64 `json:"angle_y"`
+	IsOwner       int     `json:"is_owner"`
+}
+
+// TireConditionsPage — DTO для GET /api/tire-conditions: страница списка услуг и общее количество записей
+type TireConditionsPage struct {
+	Total int64                   `json:"total"`
+	Page  int                     `json:"page"`
+	Limit int                     `json:"limit"`
+	Data  []TireConditionResponse `json:"data"`
+}
+
+// FeedResponse — DTO для GET /api/tire-conditions/feed: одна услуга ленты.
+// IsLiked — признак 0/1: стоит ли лайк текущего пользователя на этой услуге (для гостя всегда 0).
+// Position — порядковый номер услуги в ленте текущей сессии (1..100); 0, если услуги нет в ленте сессии.
+type FeedResponse struct {
+	TireConditionResponse
+	IsLiked  int `json:"is_liked"`
+	Position int `json:"position"`
 }
 
 func (tc TireCondition) ToResponse() TireConditionResponse {
 	return TireConditionResponse{
-		ID:          tc.ID,
-		Name:        tc.Name,
-		Description: tc.Description,
-		ImageURL:    tc.ImageURL,
-		VideoURL:    tc.VideoURL,
-		MuTire:      tc.MuTire,
-		MuSurface:   tc.MuSurface,
-	}
-}
-
-// RequestItemResponse — DTO для JSON-ответов по составу заявки (м-м)
-type RequestItemResponse struct {
-	ID              uint     `json:"id"`
-	RequestID       uint     `json:"request_id"`
-	TireConditionID uint     `json:"tire_condition_id"`
-	Position        int      `json:"position"`
-	BrakingDistance *float64 `json:"braking_distance"`
-}
-
-func (ri RequestItem) ToResponse() RequestItemResponse {
-	return RequestItemResponse{
-		ID:              ri.ID,
-		RequestID:       ri.RequestID,
-		TireConditionID: ri.TireConditionID,
-		Position:        ri.Position,
-		BrakingDistance: ri.BrakingDistance,
+		ID:            tc.ID,
+		Name:          tc.Name,
+		Description:   tc.Description,
+		DescriptionEn: tc.DescriptionEn,
+		ImageURL:      tc.ImageURL,
+		ModelURL:      tc.ModelURL,
+		MuTire:        tc.MuTire,
+		MuSurface:     tc.MuSurface,
+		AngleX:        tc.AngleX,
+		AngleY:        tc.AngleY,
 	}
 }
 
@@ -55,86 +59,4 @@ type UserResponse struct {
 
 func (u User) ToResponse() UserResponse {
 	return UserResponse{ID: u.ID, Username: u.Username}
-}
-
-// CartResponse — DTO для GET /api/requests/cart
-type CartResponse struct {
-	RequestID  *uint `json:"request_id"`
-	ItemsCount int   `json:"items_count"`
-}
-
-// RequestListItemResponse — DTO для строки списка заявок (GET /api/requests)
-type RequestListItemResponse struct {
-	ID                uint       `json:"id"`
-	Status            string     `json:"status"`
-	CreatorUsername   string     `json:"creator_username"`
-	ModeratorUsername *string    `json:"moderator_username"`
-	SpeedKmh          *int       `json:"speed_kmh"`
-	CreatedAt         time.Time  `json:"created_at"`
-	FormedAt          *time.Time `json:"formed_at"`
-	CompletedAt       *time.Time `json:"completed_at"`
-	ResultCount       int64      `json:"result_count"`
-}
-
-func (row RequestListRow) ToResponse() RequestListItemResponse {
-	return RequestListItemResponse{
-		ID:                row.ID,
-		Status:            row.Status,
-		CreatorUsername:   row.CreatorUsername,
-		ModeratorUsername: row.ModeratorUsername,
-		SpeedKmh:          row.SpeedKmh,
-		CreatedAt:         row.CreatedAt,
-		FormedAt:          row.FormedAt,
-		CompletedAt:       row.CompletedAt,
-		ResultCount:       row.ResultCount,
-	}
-}
-
-// RequestItemDetailResponse — DTO для позиции состава заявки внутри RequestDetailResponse
-type RequestItemDetailResponse struct {
-	ID              uint     `json:"id"`
-	TireConditionID uint     `json:"tire_condition_id"`
-	Name            string   `json:"name"`
-	ImageURL        string   `json:"image_url"`
-	Position        int      `json:"position"`
-	BrakingDistance *float64 `json:"braking_distance"`
-}
-
-func (d RequestItemDetail) ToResponse() RequestItemDetailResponse {
-	return RequestItemDetailResponse{
-		ID:              d.RequestItemID,
-		TireConditionID: d.TireConditionID,
-		Name:            d.Name,
-		ImageURL:        d.ImageURL,
-		Position:        d.Position,
-		BrakingDistance: d.BrakingDistance,
-	}
-}
-
-// RequestDetailResponse — DTO для GET /api/requests/:id и успешных PUT-переходов статуса
-type RequestDetailResponse struct {
-	ID          uint                        `json:"id"`
-	Status      string                      `json:"status"`
-	SpeedKmh    *int                        `json:"speed_kmh"`
-	CreatedAt   time.Time                   `json:"created_at"`
-	FormedAt    *time.Time                  `json:"formed_at"`
-	CompletedAt *time.Time                  `json:"completed_at"`
-	Items       []RequestItemDetailResponse `json:"items"`
-}
-
-func ToRequestDetailResponse(req Request, items []RequestItemDetail) RequestDetailResponse {
-	itemResponses := make([]RequestItemDetailResponse, len(items))
-	for i, item := range items {
-		itemResponses[i] = item.ToResponse()
-	}
-
-	return RequestDetailResponse{
-		ID:          req.ID,
-		Status:      req.Status,
-		SpeedKmh:    req.SpeedKmh,
-		CreatedAt:   req.CreatedAt,
-		FormedAt:    req.FormedAt,
-		CompletedAt: req.CompletedAt,
-		Items:       itemResponses,
-	}
 }

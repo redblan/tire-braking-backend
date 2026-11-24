@@ -4,12 +4,12 @@
 <head>
 <meta charset="UTF-8">
 <title>Тормозной путь — Лента</title>
-<link rel="stylesheet" href="/static/styles/main.css?v=3">
+<link rel="stylesheet" href="/static/styles/main.css?v=7">
 </head>
 <body>
 <div class="app">
   <div class="feed-media">
-    <video src="{{.service.VideoURL}}" autoplay muted loop playsinline></video>
+    <img src="{{.service.ImageURL}}" alt="{{.service.Name}}" onerror="this.onerror=null;this.src='/static/images/default_tire.jpg'">
     <div class="feed-overlay">
       <p class="feed-title">{{.service.Name}}</p>
       <p class="feed-desc">{{truncate .service.Description 60}}</p>

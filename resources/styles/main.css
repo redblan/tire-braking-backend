@@ -16,7 +16,7 @@ body {
 
 /* --- Лента --- */
 .feed-media { position: relative; flex: 1; background: #000; }
-.feed-media video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.feed-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .feed-overlay {
   position: absolute; bottom: 0; left: 0; right: 0;
   background: rgba(0,0,0,0.6);
@@ -37,6 +37,8 @@ body {
 
 /* --- Добавление --- */
 .add-page { padding: 16px; flex: 1; }
+.add-preview { width: 100%; height: 150px; object-fit: cover; border-radius: 12px; margin-bottom: 12px; display: block; background: #000; }
+.model-file { margin: 0 0 12px; font-size: 14px; }
 .upload-field {
   display: block; margin-bottom: 12px; border: 2px dashed #ccc; border-radius: 8px;
   padding: 12px; cursor: pointer;

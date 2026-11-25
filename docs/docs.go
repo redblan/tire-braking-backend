@@ -180,6 +180,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Шаг «Далее»: только название, изображение и 3D модель. Описание и коэффициенты сцепления задаются при публикации (PUT /api/tire-conditions/{id}/publish)",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -197,24 +198,6 @@ const docTemplate = `{
                         "name": "name",
                         "in": "formData",
                         "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Описание",
-                        "name": "description",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "number",
-                        "description": "Коэффициент сцепления шины",
-                        "name": "mu_tire",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "number",
-                        "description": "Коэффициент сцепления покрытия",
-                        "name": "mu_surface",
-                        "in": "formData"
                     },
                     {
                         "type": "file",

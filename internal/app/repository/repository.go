@@ -163,20 +163,18 @@ func (r *Repository) CreateDraft(creatorID uint, name, imageURL, modelURL string
 }
 
 // CreateTireCondition — ORM, создаёт услугу через API (POST /api/tire-conditions), статус "draft" по умолчанию;
-// углы поворота 3D модели инициализируются случайно
-func (r *Repository) CreateTireCondition(name, description, imageURL, modelURL string, muTire, muSurface float64, creatorID uint) (TireCondition, error) {
+// на шаге «Далее» приходят только название, изображение и 3D модель — описание и коэффициенты сцепления
+// заполняются при публикации; углы поворота 3D модели инициализируются случайно
+func (r *Repository) CreateTireCondition(name, imageURL, modelURL string, creatorID uint) (TireCondition, error) {
 	tc := TireCondition{
-		Name:        name,
-		Description: description,
-		Status:      "draft",
-		ImageURL:    imageURL,
-		ModelURL:    modelURL,
-		MuTire:      muTire,
-		MuSurface:   muSurface,
-		AngleX:      RandomAngle(),
-		AngleY:      RandomAngle(),
-		CreatorID:   creatorID,
-		CreatedAt:   time.Now(),
+		Name:      name,
+		Status:    "draft",
+		ImageURL:  imageURL,
+		ModelURL:  modelURL,
+		AngleX:    RandomAngle(),
+		AngleY:    RandomAngle(),
+		CreatorID: creatorID,
+		CreatedAt: time.Now(),
 	}
 	err := r.db.Create(&tc).Error
 	return tc, err

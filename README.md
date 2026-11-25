@@ -42,7 +42,7 @@ go run ./cmd/tire-braking   # сервер на :8080
 | GET | `/api/tire-conditions` | все | страница списка опубликованных услуг: `?page=` (с 1), `?limit=` (по умолчанию 10, максимум 100), фильтр `?grip=` по минимальному `mu_tire`. Ответ: `total`, `page`, `limit`, `data` — массив услуг; `is_owner` — признак 0 или 1: создатель услуги совпадает с текущим пользователем (для гостя 0) |
 | GET | `/api/tire-conditions/feed` | все | **одна** услуга ленты сессии (лента — 100 случайных услуг в Redis): без `id` — первая, `?id=N` — услуга N, `?id=N&next=true` — следующая в ленте после N, после 100-й формируются новые 100. В ответе `is_liked` — признак 0 или 1: стоит ли лайк текущего пользователя на услуге (для гостя 0), `position` — порядковый номер услуги в ленте |
 | GET | `/api/tire-conditions/draft` | пользователь | черновик услуги текущего пользователя |
-| POST | `/api/tire-conditions` | пользователь | добавление услуги (multipart: `name`, `description`, `mu_tire`, `mu_surface`, файлы `image` и `model` (3D модель `.glb`) уходят в Minio, в БД сохраняются их URL) |
+| POST | `/api/tire-conditions` | пользователь | добавление услуги — шаг «Далее» (multipart, три поля: `name`, файлы `image` и `model` (3D модель `.glb`) уходят в Minio, в БД сохраняются их URL). Описание и коэффициенты задаются при публикации |
 | PUT | `/api/tire-conditions/{id}/publish` | владелец / модератор | публикация черновика (`draft` → `published`), поля `description`, `mu_tire`, `mu_surface` |
 | DELETE | `/api/tire-conditions/{id}` | владелец / модератор | логическое удаление (SQL `UPDATE`, статус `deleted`) |
 | POST | `/api/tire-conditions/{id}/like` | пользователь | поставить (`value: 1`) или снять (`value: 0`) лайк |

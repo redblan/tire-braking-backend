@@ -227,24 +227,14 @@ paths:
     post:
       consumes:
       - multipart/form-data
+      description: 'Шаг «Далее»: только название, изображение и 3D модель. Описание
+        и коэффициенты сцепления задаются при публикации (PUT /api/tire-conditions/{id}/publish)'
       parameters:
       - description: Название
         in: formData
         name: name
         required: true
         type: string
-      - description: Описание
-        in: formData
-        name: description
-        type: string
-      - description: Коэффициент сцепления шины
-        in: formData
-        name: mu_tire
-        type: number
-      - description: Коэффициент сцепления покрытия
-        in: formData
-        name: mu_surface
-        type: number
       - description: Изображение
         in: formData
         name: image

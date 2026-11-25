@@ -203,12 +203,10 @@ func (h *Handler) GetMyDraftTireConditionAPI(ctx *gin.Context) {
 // @Accept      multipart/form-data
 // @Produce     json
 // @Security    BearerAuth
-// @Param       name        formData string true  "Название"
-// @Param       description formData string false "Описание"
-// @Param       mu_tire     formData number false "Коэффициент сцепления шины"
-// @Param       mu_surface  formData number false "Коэффициент сцепления покрытия"
-// @Param       image       formData file   true  "Изображение"
-// @Param       model       formData file   true  "3D модель (.glb)"
+// @Description Шаг «Далее»: только название, изображение и 3D модель. Описание и коэффициенты сцепления задаются при публикации (PUT /api/tire-conditions/{id}/publish)
+// @Param       name  formData string true "Название"
+// @Param       image formData file   true "Изображение"
+// @Param       model formData file   true "3D модель (.glb)"
 // @Success     201 {object} repository.TireConditionResponse
 // @Failure     400 "Некорректные параметры"
 // @Failure     401 "Нет токена, токен невалиден, просрочен или отозван"
@@ -220,9 +218,6 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 		ctx.Status(http.StatusBadRequest)
 		return
 	}
-	description := ctx.PostForm("description")
-	muTire := parseDecimal(ctx.PostForm("mu_tire"))
-	muSurface := parseDecimal(ctx.PostForm("mu_surface"))
 
 	imageFile, imageHeader, err := ctx.Request.FormFile("image")
 	if err != nil {
@@ -232,6 +227,10 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 	defer imageFile.Close()
 
 	modelFile, modelHeader, err := ctx.Request.FormFile("model")
+	if err != nil {
+		// video — прежнее имя поля файла: так его передаёт базовая коллекция Postman из ЛР-3
+		modelFile, modelHeader, err = ctx.Request.FormFile("video")
+	}
 	if err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return
@@ -251,7 +250,7 @@ func (h *Handler) PostTireConditionAPI(ctx *gin.Context) {
 	}
 
 	userID, _ := currentUserID(ctx)
-	tc, err := h.Repository.CreateTireCondition(name, description, imageURL, modelURL, muTire, muSurface, userID)
+	tc, err := h.Repository.CreateTireCondition(name, imageURL, modelURL, userID)
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return
